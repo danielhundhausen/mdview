@@ -4,6 +4,18 @@ A small Markdown-to-HTML compiler written in C. Run it on a Markdown file to
 create a styled, temporary HTML page and open it in your default browser.
 There are no rendering libraries or language-runtime dependencies.
 
+## Install with Homebrew
+
+```sh
+brew install danielhundhausen/tap/mdview
+mdview foo.md
+```
+
+The formula builds from source. On Linux, `xdg-open` must also be installed
+through your system's package manager to open the browser.
+
+## Build from source
+
 ```sh
 make
 ./mdview foo.md
@@ -84,3 +96,7 @@ make clean
 make CFLAGS='-g -O1 -std=c99 -Wall -Wextra -Wpedantic -fsanitize=address,undefined -fno-omit-frame-pointer'
 make test
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

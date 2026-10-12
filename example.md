@@ -45,6 +45,23 @@ int main(void) {
 | Rendering | Ready | 0 |
 | Browser launch | Ready | OS launcher |
 
+## Diagrams
+
+```mermaid
+flowchart LR
+    A[Write Markdown] --> B[Run mdview]
+    B --> C[Read in your browser]
+    B --> D[Share the HTML]
+```
+
+```mermaid
+sequenceDiagram
+    participant Writer
+    participant Reader
+    Writer->>Reader: A document with diagrams
+    Reader-->>Writer: Clear and easy to follow
+```
+
 ---
 
 The page follows your system's light or dark theme.

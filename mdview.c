@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include "render_modules.h"
 
 /* A deliberately small, dependency-free Markdown renderer. Raw HTML is escaped. */
 typedef struct { char *s; size_t n, cap; } Buf;
@@ -45,6 +46,7 @@ static void append_n(Buf *b, const char *s, size_t n) {
 }
 
 static void append(Buf *b, const char *s) { append_n(b, s, strlen(s)); }
+static void emit(void *context, const char *s) { append(context, s); }
 static void put(Buf *b, char c) { append_n(b, &c, 1); }
 
 static char *copy_n(const char *s, size_t n) {
@@ -399,7 +401,7 @@ static int block_start(const char *s) {
            (indent(s) <= 3 && s[indent(s)] == '>') || marker(s).kind;
 }
 
-static void blocks(Buf *out, Lines l, unsigned depth) {
+static void blocks(Buf *out, Lines l, unsigned depth, RenderModules *modules) {
     if (depth > 64) { die("Markdown nesting exceeds 64 levels"); }
     for (size_t i = 0; i < l.n;) {
         const char *s = l.v[i];
@@ -407,10 +409,13 @@ static void blocks(Buf *out, Lines l, unsigned depth) {
         size_t body = 0; char ch = 0;
         size_t run = fence(s, &ch, &body);
         if (run) {
-            append(out, "<pre><code");
             const char *info = s + body; while (*info == ' ') ++info;
             size_t lang = 0;
             while (isalnum((unsigned char)info[lang]) || info[lang] == '-' || info[lang] == '_' || info[lang] == '+') ++lang;
+            const RenderModule *module = (!info[lang] || isspace((unsigned char)info[lang]))
+                ? render_module_find(modules, info, lang) : NULL;
+            if (module) append(out, module->before_code);
+            append(out, "<pre><code");
             if (lang) { append(out, " class=\"language-"); escape(out, info, lang); put(out, '"'); }
             put(out, '>'); ++i;
             while (i < l.n) {
@@ -420,7 +425,9 @@ static void blocks(Buf *out, Lines l, unsigned depth) {
                 if (spaces < strip) strip = spaces;
                 escape(out, l.v[i] + strip, strlen(l.v[i] + strip)); put(out, '\n'); ++i;
             }
-            append(out, "</code></pre>\n"); continue;
+            append(out, "</code></pre>\n");
+            if (module) append(out, module->after_code);
+            continue;
         }
         int h = heading(s, &body);
         if (h) {
@@ -448,7 +455,7 @@ static void blocks(Buf *out, Lines l, unsigned depth) {
                 append(&quoted, l.v[i] + k); put(&quoted, '\n'); ++i;
             }
             Lines inner = split_lines(quoted.s); append(out, "<blockquote>\n");
-            blocks(out, inner, depth + 1); append(out, "</blockquote>\n"); free_lines(inner); free(quoted.s); continue;
+            blocks(out, inner, depth + 1, modules); append(out, "</blockquote>\n"); free_lines(inner); free(quoted.s); continue;
         }
         if (indent(s) >= 4) {
             append(out, "<pre><code>"); size_t last = i;
@@ -490,7 +497,7 @@ static void blocks(Buf *out, Lines l, unsigned depth) {
                     else break;
                     put(&item, '\n'); ++i;
                 }
-                Lines inner = split_lines(item.s); blocks(out, inner, depth + 1);
+                Lines inner = split_lines(item.s); blocks(out, inner, depth + 1, modules);
                 free_lines(inner); free(item.s); append(out, "</li>\n");
                 size_t next = i; while (next < l.n && blank(l.v[next])) ++next;
                 if (next < l.n) {
@@ -634,17 +641,25 @@ int main(int argc, char **argv) {
         char *p = realloc(base, n + 2); if (!p) die("out of memory");
         base = p; if (!n || base[n - 1] != '/') { base[n] = '/'; base[n + 1] = '\0'; }
     }
+    RenderModules modules = {0}; Buf rendered = {0};
+    const char *content = source.s;
+    if (source.n >= 3 && !memcmp(content, "\xEF\xBB\xBF", 3)) content += 3;
+    Lines lines = split_lines(content); blocks(&rendered, lines, 0, &modules);
+    free_lines(lines); free(source.s);
     Buf html = {0};
     append(&html, "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>");
     const char *title = strrchr(input, '/'); title = title ? title + 1 : input;
     if (!strcmp(input, "-")) title = "Markdown preview";
     escape(&html, title, strlen(title)); append(&html, "</title>\n<base href=\"");
     Buf url = {0}; file_url(&url, base); escape(&html, url.s, url.n); free(url.s); free(base);
-    append(&html, "\">\n<style>"); append(&html, style); append(&html, "</style>\n</head>\n<body>\n<main>\n");
-    const char *content = source.s;
-    if (source.n >= 3 && !memcmp(content, "\xEF\xBB\xBF", 3)) content += 3;
-    Lines lines = split_lines(content); blocks(&html, lines, 0); free_lines(lines); free(source.s);
-    append(&html, "</main>\n</body>\n</html>\n");
+    append(&html, "\">\n<style>"); append(&html, style);
+    render_modules_styles(&modules, emit, &html);
+    append(&html, "</style>\n</head>\n<body>\n<main>\n");
+    if (rendered.n) append_n(&html, rendered.s, rendered.n);
+    free(rendered.s);
+    append(&html, "</main>\n");
+    if (!render_modules_scripts(&modules, emit, &html)) { free(html.s); return 1; }
+    append(&html, "</body>\n</html>\n");
     FILE *f; char *temporary = NULL;
     if (output) f = fopen(output, "wb");
     else {

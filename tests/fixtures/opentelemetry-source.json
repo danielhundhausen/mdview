@@ -1,0 +1,9 @@
+{
+  "source": "https://github.com/open-telemetry/opentelemetry.io/blob/90f0e2fbac27c38197e716182a811cd120b34ae3/content/en/docs/demo/architecture.md",
+  "revision": "90f0e2fbac27c38197e716182a811cd120b34ae3",
+  "license": "CC-BY-4.0",
+  "diagram_sha256": [
+    "09278c64b9c611fed43274871a9ce7ecd531d7151fa1fc7897f6361e9f405055",
+    "745557e3acb532a5eeef7ba47d23b24bc7c5e8ae805a729464a70a430650ee18"
+  ]
+}

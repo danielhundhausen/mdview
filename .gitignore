@@ -1,2 +1,5 @@
 /mdview
 *.dSYM/
+/.build/
+/mermaid_asset.h
+/artifacts/

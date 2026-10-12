@@ -57,15 +57,46 @@ Relative images and links resolve against the source file's directory, even
 when the HTML is in a temporary directory. For standard input, they resolve
 against the current working directory. The generated page includes its own
 CSS with a warm paper layout, serif headings, system fonts, light/dark themes,
-accessible link focus indicators, responsive layout, and print styles. It uses no
-JavaScript, web fonts, or remote stylesheets. Remote images can still be loaded
-if the document references them.
+accessible link focus indicators, responsive layout, and print styles. Ordinary
+Markdown pages use no JavaScript, web fonts, or remote stylesheets. Mermaid
+diagrams load a browser renderer as described below. Remote images can still
+be loaded if the document references them.
+
+## Mermaid diagrams
+
+Use a fenced block labeled `mermaid`:
+
+````markdown
+```mermaid
+flowchart LR
+    A[Markdown] --> B[HTML]
+    B --> C[Browser]
+```
+````
+
+Diagrams use the document's colors and system font, adapt when the light/dark
+theme changes, and scroll horizontally when wider than the reading column.
+The original diagram source is available in a disclosure below each diagram.
+
+The executable contains **Mermaid 12.1.0**, compressed with DEFLATE. A small
+vendored C decompressor expands the library into the generated HTML only when
+Mermaid fences are present. The binary is approximately 1.66 MB; diagram pages
+include approximately 5.5 MB of JavaScript. Ordinary pages remain small.
+
+Diagram rendering requires browser JavaScript and works offline. No Node.js,
+zlib installation, CDN connection, or accompanying runtime files are needed.
+Diagram text stays local. If JavaScript is disabled or diagram syntax is invalid,
+the escaped source remains readable. External images, links, or explicitly
+configured remote icon resources can still use the network.
+Mermaid runs in strict mode, which disables diagram click handlers and encodes
+HTML labels. See the [Mermaid usage guide](https://mermaid.js.org/config/usage).
 
 ## Markdown support
 
 - ATX (`#`) and single-line Setext headings, paragraphs, and horizontal rules
 - Bold, italics, combined emphasis, strikethrough, and punctuation escapes
 - Inline code, fenced code with optional language labels, and indented code
+- Mermaid diagrams in `mermaid` fences, including inside lists and blockquotes
 - Bullet and numbered lists, nested lists, and task checkboxes
 - Blockquotes, including nested blocks
 - Inline links and images, optional quoted titles, and angle-bracket URL/email links
@@ -84,11 +115,41 @@ Nesting is bounded to keep malformed documents from exhausting the C stack.
 
 ```sh
 make test
+make test-js
 ```
 
-Tests require Python 3 and cover rendering, malformed input, CLI errors, asset
-paths, temporary-file permissions, and browser launching with a stub command.
-They do not open a real browser.
+`make test` requires Python 3 and covers rendering, malformed input, CLI errors,
+asset paths, temporary-file permissions, module activation, and browser launching
+with a stub command. It also verifies the decompressed library's SHA-256 against
+the vendored manifest. `make test-js` requires Node.js and tests the Mermaid
+adapter with a mocked renderer, including missing-runtime fallback, syntax
+errors, and theme changes. Neither suite opens a browser or downloads Mermaid.
+
+For a real-library integration test without browser control, install `jsdom`
+and `svgdom` into a temporary directory and run:
+
+```sh
+npm install --prefix /tmp/mdview-dom-test --no-audit --no-fund jsdom@27.0.1 svgdom@0.1.22
+node tests/render_offline.mjs ./mdview tests/fixtures/opentelemetry-demo.md /tmp/mdview-result /tmp/mdview-dom-test
+```
+
+This executes the generated HTML's actual Mermaid bundle in a DOM emulator,
+uses SVG font metrics and geometry from svgdom, blocks network requests, renders
+two substantial upstream OpenTelemetry diagrams in light and dark themes, and
+writes SVGs, a rendered HTML snapshot, and a JSON report. It verifies the actual
+library integration; it does not replace a browser-specific layout test.
+
+### Rendering modules
+
+Fenced-code extensions live outside the Markdown parser. `render_modules.h`
+defines the module interface, `render_modules.c` registers modules and tracks
+which are used by a document, and `mermaid_module.c` owns Mermaid's markup,
+styles, and browser adapter. To add another renderer, implement a `RenderModule`,
+register it, and add its C source to `SOURCES` in the Makefile. Module assets are
+included once, only in documents that use the corresponding fence language.
+The optional `emit_runtime` callback supports compressed runtime assets. The
+build-time asset converter is also written in C; normal builds use only Make
+and a C99 compiler, with no network access.
 
 For a sanitizer build:
 
@@ -100,4 +161,6 @@ make test
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+mdview is MIT licensed; see [LICENSE](LICENSE). Bundled Mermaid and miniz retain
+their upstream licenses under `vendor/`. The OpenTelemetry test diagrams are
+CC BY 4.0, with source attribution and license under `tests/fixtures/`.

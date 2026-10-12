@@ -8,6 +8,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import hashlib
+import json
 from html.parser import HTMLParser
 
 PROGRAM = str(Path(sys.argv.pop(1)).resolve())
@@ -98,6 +100,47 @@ class MdviewTests(unittest.TestCase):
         self.assertEqual(html.count("<blockquote>"), 2)
         self.assertIn("<p>nested</p>", html)
         self.assertTrue(html.endswith("<p>Outside</p>\n"))
+
+    def test_mermaid_module(self):
+        html = self.render("```mermaid\nflowchart LR\n  A[Read] --> B[Render]\n```\n\n"
+                           "~~~mermaid\nsequenceDiagram\n  Alice->>Bob: Hello\n~~~\n")
+        self.assertEqual(html.count('<figure class="md-diagram">'), 2)
+        self.assertEqual(html.count("<details open>"), 2)
+        self.assertIn("Alice-&gt;&gt;Bob: Hello", html)
+        full = (self.root / "out.html").read_text()
+        self.assertEqual(full.count('<script type="module">'), 1)
+        self.assertNotIn("await import(", full)
+        self.assertEqual(full.count('data-mdview-mermaid-runtime="12.1.0"'), 1)
+        self.assertIn("securityLevel:'strict'", full)
+        raw = (self.root / "out.html").read_bytes()
+        runtime = raw.split(b'<script data-mdview-mermaid-runtime="12.1.0">\n', 1)[1].split(b"*/\n", 1)[1].split(b"\n</script>", 1)[0]
+        manifest = json.loads((Path(__file__).resolve().parents[1] / "vendor/mermaid/manifest.json").read_text())
+        self.assertEqual(hashlib.sha256(runtime).hexdigest(), manifest["source_sha256"])
+
+    def test_mermaid_escaping_and_unclosed_fence(self):
+        html = self.render("```mermaid\nflowchart LR\n</script><script>alert(1)</script>\n")
+        self.assertIn("&lt;/script&gt;&lt;script&gt;alert(1)&lt;/script&gt;", html)
+        self.assertIn("</figure>", html)
+        full = (self.root / "out.html").read_text()
+        self.assertEqual(full.count("</script>"), 2)
+        self.assertNotIn("<script>alert(1)", full)
+
+    def test_mermaid_in_nested_blocks(self):
+        html = self.render("> ```mermaid\n> flowchart TD\n>   A --> B\n> ```\n\n"
+                           "- diagram\n\n  ```mermaid\n  flowchart LR\n    C --> D\n  ```\n")
+        self.assertEqual(html.count('<figure class="md-diagram">'), 2)
+        self.assertEqual((self.root / "out.html").read_text().count('data-mdview-mermaid-runtime="12.1.0"'), 1)
+
+    def test_module_assets_are_conditional(self):
+        for source in ("# Plain Markdown", "```c\nputs(\"hello\");\n```",
+                       "```mermaid-extra\nA --> B\n```",
+                       "```mermaid.js\nA --> B\n```",
+                       "````text\n```mermaid\nA --> B\n```\n````"):
+            self.render(source)
+            full = (self.root / "out.html").read_text()
+            self.assertNotIn("<script", full)
+            self.assertNotIn("cdn.jsdelivr.net", full)
+            self.assertNotIn(".md-diagram{", full)
 
     def test_links_images_and_autolinks(self):
         html = self.render('[**link**](https://example.com/a_(b) "title") '

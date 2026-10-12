@@ -13,6 +13,7 @@ import json
 import time
 import signal
 import select
+import re
 from contextlib import contextmanager
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError, URLError
@@ -36,6 +37,39 @@ class Structure(HTMLParser):
             raise AssertionError(f"unbalanced HTML: {tag}")
 
 
+class Navigation(HTMLParser):
+    def __init__(self, html):
+        super().__init__()
+        self.ids = []
+        self.fragments = []
+        self.outline = []
+        self.toc = None
+        self.in_nav = False
+        self.depth = 0
+        self.feed(html)
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if re.fullmatch(r"h[1-6]", tag):
+            self.ids.append(attrs["id"])
+        if tag == "details" and attrs.get("class") == "toc":
+            self.toc = attrs
+        if tag == "nav":
+            self.in_nav = True
+        if self.in_nav and tag == "ul":
+            self.depth += 1
+        if tag == "a" and "data-mdview-fragment" in attrs:
+            self.fragments.append(attrs)
+            if self.in_nav:
+                self.outline.append((urlsplit(attrs["href"]).fragment, self.depth))
+
+    def handle_endtag(self, tag):
+        if self.in_nav and tag == "ul":
+            self.depth -= 1
+        if tag == "nav":
+            self.in_nav = False
+
+
 class MdviewTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="mdview-test-")
@@ -48,11 +82,11 @@ class MdviewTests(unittest.TestCase):
         return subprocess.run([PROGRAM, *map(str, args)], input=stdin, text=True,
                               capture_output=True, cwd=self.root, env=env, timeout=10)
 
-    def render(self, source):
+    def render(self, source, *args):
         path = self.root / "input.md"
         path.write_text(source, encoding="utf-8")
         output = self.root / "out.html"
-        result = self.run_cmd("--no-open", "-o", output, path)
+        result = self.run_cmd("--no-open", *args, "-o", output, path)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), str(output))
         html = output.read_text()
@@ -60,6 +94,10 @@ class MdviewTests(unittest.TestCase):
         parser.feed(html)
         self.assertEqual(parser.stack, [])
         return html.split("<main>\n", 1)[1].split("</main>", 1)[0]
+
+    def render_page(self, source, *args):
+        self.render(source, *args)
+        return (self.root / "out.html").read_text()
 
     @contextmanager
     def watching(self, source, *args, env=None):
@@ -104,7 +142,7 @@ class MdviewTests(unittest.TestCase):
         output = self.root / "live.html"
         with self.watching(source, "--no-open", "-o", output) as (process, url):
             html = self.fetch(url)
-            self.assertIn("<h1>First</h1>", html)
+            self.assertIn('<h1 id="first" tabindex="-1">First', html)
             self.assertIn("data-mdview-watch", html)
             origin = url.rsplit("/", 1)[0]
             revision = int(self.fetch(origin + "/revision"))
@@ -112,12 +150,12 @@ class MdviewTests(unittest.TestCase):
             original_stat = source.stat()
             source.write_text("# Other")
             os.utime(source, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
-            self.await_preview(url, "<h1>Other</h1>")
+            self.await_preview(url, '<h1 id="other" tabindex="-1">Other')
             self.assertGreater(int(self.fetch(origin + "/revision")), revision)
             replacement = self.root / "save.md"
             replacement.write_text("# Atomic save\n\n```js\nconst n = 1;\n```")
             replacement.replace(source)
-            html = self.await_preview(url, "<h1>Atomic save</h1>")
+            html = self.await_preview(url, '<h1 id="atomic-save" tabindex="-1">Atomic save')
             self.assertIn('data-mdview-highlight-runtime="11.12.0"', html)
             self.assertEqual(output.read_text(), html)
             self.assertIsNone(process.poll())
@@ -141,7 +179,7 @@ class MdviewTests(unittest.TestCase):
             time.sleep(.4)
             self.assertEqual(self.fetch(url), initial)
             source.write_text("# Recovered")
-            self.await_preview(url, "<h1>Recovered</h1>")
+            self.await_preview(url, '<h1 id="recovered" tabindex="-1">Recovered')
             self.assertIsNone(process.poll())
         self.assertIn("keeping the last preview", (self.root / "watch.log").read_text())
 
@@ -155,10 +193,10 @@ class MdviewTests(unittest.TestCase):
             output = outputs[0]
             self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o600)
             source.write_text("# Updated")
-            self.await_preview(url, "<h1>Updated</h1>")
+            self.await_preview(url, '<h1 id="updated" tabindex="-1">Updated')
             self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o600)
         self.assertTrue(output.exists())
-        self.assertIn("<h1>Updated</h1>", output.read_text())
+        self.assertIn('<h1 id="updated" tabindex="-1">Updated', output.read_text())
 
     def test_watch_serves_local_assets_and_limits_access(self):
         directory = self.root / "space # & ü"
@@ -193,7 +231,7 @@ class MdviewTests(unittest.TestCase):
                 self.assertEqual(response.read(), b"")
                 self.assertEqual(int(response.headers["Content-Length"]), output.stat().st_size)
             source.write_text("# Updated")
-            self.await_preview(url, "<h1>Updated</h1>")
+            self.await_preview(url, '<h1 id="updated" tabindex="-1">Updated')
             self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o640)
 
     def test_watch_launches_browser_only_once(self):
@@ -206,7 +244,7 @@ class MdviewTests(unittest.TestCase):
         source.write_text("# First")
         with self.watching(source, env=env) as (_, url):
             source.write_text("# Second")
-            self.await_preview(url, "<h1>Second</h1>")
+            self.await_preview(url, '<h1 id="second" tabindex="-1">Second')
             self.assertEqual(record.read_text().splitlines(), ["1", url])
 
     def test_watch_rejects_stdin_and_input_overwrite(self):
@@ -222,11 +260,112 @@ class MdviewTests(unittest.TestCase):
 
     def test_headings_and_paragraphs(self):
         html = self.render("# Title\n\nHello\nworld\n\nSecond\n------\n\n### Third ###\n\n---\n")
-        self.assertIn("<h1>Title</h1>", html)
+        self.assertIn('<h1 id="title" tabindex="-1">Title', html)
         self.assertIn("<p>Hello\nworld</p>", html)
-        self.assertIn("<h2>Second</h2>", html)
-        self.assertIn("<h3>Third</h3>", html)
+        self.assertIn('<h2 id="second" tabindex="-1">Second', html)
+        self.assertIn('<h3 id="third" tabindex="-1">Third', html)
         self.assertIn("<hr>", html)
+
+    def test_heading_ids_and_collision_handling(self):
+        html = self.render("# **Installation**\n\n## Installation\n\n"
+                           "### Installation-1\n\n## Installation\n\n"
+                           "## !!!\n\n##\n\nTitle _again_\n===\n\n"
+                           "> ## Installation\n\n- ### Installation\n\n"
+                           "```md\n# Not a heading\n```\n\n    # Also not a heading\n",
+                           "--no-toc")
+        nav = Navigation(html)
+        self.assertEqual(nav.ids, ["installation", "installation-1", "installation-1-1",
+                                   "installation-2", "section", "section-1", "title-again",
+                                   "installation-3", "installation-4"])
+        self.assertEqual(len(nav.fragments), len(nav.ids))
+        self.assertIsNone(nav.toc)
+        for anchor, heading_id in zip(nav.fragments, nav.ids):
+            self.assertEqual(anchor["class"], "heading-anchor")
+            self.assertEqual(urlsplit(anchor["href"]).fragment, heading_id)
+            self.assertTrue(anchor["aria-label"].startswith("Link to section"))
+        self.assertEqual(Navigation(self.render("# Installation\n\n## Usage")).ids,
+                         ["installation", "usage"])
+
+    def test_heading_labels_escaping_and_utf8(self):
+        html = self.render_page('# **Install** `mdview` [guide](https://example.com/other "Title") '
+                           '& <safe> \\*stars\\* ![Logo & icon](logo.svg)\n\n'
+                           '# HéLLo 世界\n\n# &lt;script&gt;\n', "--toc")
+        nav = Navigation(html)
+        self.assertEqual(nav.ids, ["install-mdview-guide-safe-stars-logo-icon",
+                                   "héllo-世界", "ltscriptgt"])
+        toc = html.split('<nav aria-label="Table of contents">', 1)[1].split('</nav>', 1)[0]
+        self.assertIn('Install mdview guide &amp; &lt;safe&gt; *stars* Logo &amp; icon</a>', toc)
+        self.assertNotIn('<img', toc)
+        self.assertNotIn('<strong', toc)
+        self.assertNotIn('https://example.com', toc)
+        self.assertIn('aria-label="Link to section: Install mdview guide &amp; &lt;safe&gt;', html)
+        self.assertIn('&amp;lt;script&amp;gt;</a>', toc)
+
+    def test_toc_threshold_options_and_hierarchy(self):
+        short = "# Title\n\n## Installation\n\n### Usage\n"
+        self.assertIsNone(Navigation(self.render_page(short)).toc)
+        nav = Navigation(self.render_page(short, "--toc"))
+        self.assertIsNotNone(nav.toc)
+        self.assertNotIn("open", nav.toc)
+        self.assertEqual(nav.outline, [("title", 1), ("installation", 2), ("usage", 3)])
+        long = "# Title\n\n### Deep\n\n###### Deeper\n\n## Next\n\n#### Child\n\n# Last\n"
+        html = self.render_page(long)
+        nav = Navigation(html)
+        self.assertEqual(nav.outline, [("title", 1), ("deep", 2), ("deeper", 3),
+                                       ("next", 2), ("child", 3), ("last", 1)])
+        self.assertLess(html.index('<aside class="toc-sidebar">'), html.index('<details class="toc">'))
+        self.assertLess(html.index('</aside>'), html.index('<main>'))
+        main = html.split('<main>\n', 1)[1].split('</main>', 1)[0]
+        self.assertNotIn('<details', main)
+        self.assertTrue(main.startswith('<h1 id="title"'))
+        hidden = self.render_page(long, "--no-toc")
+        self.assertIsNone(Navigation(hidden).toc)
+        self.assertNotIn('<div class="document-layout">', hidden)
+        self.assertNotIn('data-mdview-headings', hidden)
+        self.assertIsNone(Navigation(self.render_page("No headings", "--toc")).toc)
+        self.assertIsNone(Navigation(self.render_page(long, "--toc", "--no-toc")).toc)
+        self.assertIsNotNone(Navigation(self.render_page(short, "--no-toc", "--toc")).toc)
+        html = self.render_page("### First\n\n# Top\n\n## Child\n\n##### Leaf\n")
+        self.assertEqual(Navigation(html).outline,
+                         [("first", 1), ("top", 1), ("child", 2), ("leaf", 3)])
+        self.assertEqual(html.count('<script data-mdview-headings>'), 1)
+
+    def test_fragments_override_asset_base(self):
+        source = self.root / "source assets"
+        source.mkdir()
+        path = source / "input.md"
+        path.write_text("# Installation\n\n[Jump](#installation) [Other](more.md#section)\n\n"
+                        "![Image](picture.png)\n")
+        output = self.root / 'preview # & " ü.html'
+        result = self.run_cmd("--no-open", "--toc", "-o", output, path)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        html = output.read_text()
+        nav = Navigation(html)
+        self.assertEqual(len(nav.fragments), 3)  # Permalink, outline, Markdown link.
+        for link in nav.fragments:
+            target = urlsplit(link["href"])
+            self.assertEqual(link["href"], output.as_uri() + "#installation")
+            self.assertEqual(target.fragment, "installation")
+        self.assertIn('href="more.md#section"', html)
+        self.assertIn('src="picture.png"', html)
+        self.assertIn('<base href="' + source.as_uri() + '/">', html)
+        self.assertIn('<script data-mdview-headings>', html)
+
+    def test_watch_preserves_outline_options_and_final_file_links(self):
+        source = self.root / "live.md"
+        output = self.root / "live.html"
+        for options, show in [(('--toc',), True), (('--no-toc',), False)]:
+            source.write_text("# Title\n\n## Installation\n\n### Usage\n\n## End\n")
+            with self.watching(source, "--no-open", "-o", output, *options) as (_, url):
+                self.assertEqual(Navigation(self.fetch(url)).toc is not None, show)
+                source.write_text("# Updated\n\n[Jump](#installation)\n\n## Installation\n\n"
+                                  "### Usage\n\n## End\n")
+                html = self.await_preview(url, '<h1 id="updated" tabindex="-1">Updated')
+                nav = Navigation(html)
+                self.assertEqual(nav.toc is not None, show)
+                for anchor in nav.fragments:
+                    self.assertTrue(anchor["href"].startswith(output.as_uri() + "#"))
+                self.assertNotIn(".watch-", html)
 
     def test_inline(self):
         html = self.render("**bold** *italic* _also_ ~~gone~~ ***both***\n\n"
@@ -427,7 +566,7 @@ class MdviewTests(unittest.TestCase):
         self.assertEqual(output.parent, self.root)
         self.assertEqual(output.suffix, ".html")
         self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o600)
-        self.assertIn("<h1>Temporary</h1>", output.read_text())
+        self.assertIn('<h1 id="temporary" tabindex="-1">Temporary', output.read_text())
         other = self.run_cmd("--no-open", path, env=env)
         self.assertNotEqual(result.stdout, other.stdout)
 
@@ -453,9 +592,9 @@ class MdviewTests(unittest.TestCase):
         output = self.root / "stdin.html"
         result = self.run_cmd("--no-open", "-o", output, "-", stdin="# Héllo 🌍\n")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("<h1>Héllo 🌍</h1>", output.read_text())
+        self.assertIn('<h1 id="héllo-🌍" tabindex="-1">Héllo 🌍', output.read_text())
         self.assertEqual(self.render(""), "")
-        self.assertIn("<h1>Title</h1>", self.render("\ufeff# Title\r\n\r\nBody\r\n"))
+        self.assertIn('<h1 id="title" tabindex="-1">Title', self.render("\ufeff# Title\r\n\r\nBody\r\n"))
 
     def test_errors(self):
         for args in ([], ["missing.md"], ["--unknown"], ["-o"], ["a.md", "b.md"]):
@@ -465,7 +604,7 @@ class MdviewTests(unittest.TestCase):
         self.assertEqual(self.run_cmd("--help").returncode, 0)
         version = self.run_cmd("--version")
         self.assertEqual(version.returncode, 0)
-        self.assertEqual(version.stdout.strip(), "mdview 0.0.5")
+        self.assertEqual(version.stdout.strip(), "mdview 0.0.6")
         path = self.root / "nul.md"
         path.write_bytes(b"a\0b")
         self.assertIn("NUL", self.run_cmd("--no-open", path).stderr)

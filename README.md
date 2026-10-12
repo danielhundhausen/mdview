@@ -46,6 +46,8 @@ mdview -o notes.html notes.md        # Save to a chosen file and open it
 mdview --no-open -o notes.html notes.md
 mdview --watch notes.md              # Refresh the open preview as you edit
 mdview --watch --no-open notes.md    # Print the live preview URL without opening it
+mdview --toc notes.md                # Always include a collapsible outline
+mdview --no-toc notes.md             # Hide the outline, even in longer documents
 cat notes.md | mdview -              # Read standard input
 mdview -- --strange-filename.md      # Filenames beginning with a dash
 mdview --help
@@ -80,9 +82,46 @@ when the HTML is in a temporary directory. For standard input, they resolve
 against the current working directory. The generated page includes its own
 CSS with a warm paper layout, serif headings, system fonts, light/dark themes,
 accessible link focus indicators, responsive layout, and print styles. Pages
-without code blocks or `--watch` use no JavaScript, web fonts, or remote stylesheets. Code
+without code blocks, a table of contents, or `--watch` use no JavaScript,
+web fonts, or remote stylesheets. Code
 blocks and Mermaid diagrams include their browser assets as described below.
 Remote images can still be loaded if the document references them.
+
+## Heading links and table of contents
+
+Every ATX and Setext heading has an ID and a small **#** permalink next to its
+text. Click the permalink to jump to that section, or copy its link using your
+browser. Markdown links such as `[Installation](#installation)` jump within the
+preview. Fragment navigation works in saved HTML and live previews while relative
+images and file links continue to resolve against the Markdown directory.
+
+IDs come from the visible heading text: formatting and link destinations are
+removed, ASCII letters become lowercase, spaces become hyphens, and ASCII
+punctuation is removed except for hyphens and underscores. UTF-8 characters are
+preserved. For example, `## Installation` becomes `#installation`, and
+``## **Using** `mdview` `` becomes `#using-mdview`. Repeated IDs receive `-1`, `-2`,
+and so on, avoiding collisions with earlier headings; empty or punctuation-only
+headings use `section`. IDs remain the same when unrelated text changes.
+
+Documents with four or more headings automatically include a
+**Table of contents** in a separate sidebar to the left of the document. The sidebar
+stays visible while scrolling; on narrow screens it sits above the document.
+Expand it to see links nested by heading level.
+Initially, the outline is expanded on screens wider than 1000 pixels and collapsed
+on narrower screens. You can toggle it at any time; resizing keeps your choice.
+A soft wash behind the current section's label glides between entries as you
+scroll. It follows the label's width and adapts to both themes; reduced-motion
+preferences disable the animation.
+Use `--toc` to include it in shorter documents, or `--no-toc` to hide it.
+Documents without headings never show an empty outline. When both flags are
+given, the last one wins. Headings inside lists and blockquotes are included;
+heading-like text inside code blocks is ignored.
+
+Heading links and the outline work without JavaScript in saved pages and are
+hidden when printing. The viewport defaults and current-section highlight use
+a small embedded script; without JavaScript, the outline starts collapsed and
+remains manually expandable. Watch mode preserves the outline's expanded state on
+automatic refreshes.
 
 ## Code blocks
 
@@ -143,6 +182,7 @@ HTML labels. See the [Mermaid usage guide](https://mermaid.js.org/config/usage).
 ## Markdown support
 
 - ATX (`#`) and single-line Setext headings, paragraphs, and horizontal rules
+- Heading IDs, section permalinks, and an optional collapsible table of contents
 - Bold, italics, combined emphasis, strikethrough, and punctuation escapes
 - Inline code, fenced code with optional language labels, and indented code
 - Offline syntax highlighting for supported fenced languages and code copy buttons
@@ -155,8 +195,8 @@ HTML labels. See the [Mermaid usage guide](https://mermaid.js.org/config/usage).
 - UTF-8 text, optional UTF-8 BOM, and Unix/Windows line endings
 
 This is a pragmatic Markdown subset, not a full CommonMark or GitHub Flavored
-Markdown implementation. Reference-style links, footnotes, automatic heading
-IDs, bare URL linking, and some complex delimiter/list/
+Markdown implementation. Reference-style links, footnotes,
+bare URL linking, and some complex delimiter/list/
 table edge cases are not supported. Raw HTML is displayed as text. URL schemes
 are limited to `http`, `https`, `mailto`, and `file`, plus relative paths.
 Nesting is bounded to keep malformed documents from exhausting the C stack.
@@ -182,7 +222,11 @@ opens a browser or downloads dependencies.
 The Python suite also verifies live HTTP previews, content changes and atomic
 saves, recovery from invalid or missing input, local assets, and clean shutdown.
 The JavaScript suite verifies refresh polling and scroll restoration through
-delayed layout changes and user interaction.
+delayed layout changes and user interaction, fragment links in live previews,
+and outline state restoration. The heading adapter suite covers viewport defaults,
+reader toggles, current-section tracking, and delayed layout changes.
+The Python suite covers heading IDs and collisions,
+safe labels, outline hierarchy and CLI controls, and fragment links in saved pages.
 
 For a real-library integration test without browser control, install `jsdom`
 and `svgdom` into a temporary directory and run:

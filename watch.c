@@ -188,7 +188,7 @@ static void serve_client(int fd, const char *output, const char *directory,
 /* Render in a worker so a malformed edit (including parser limits) cannot
  * terminate the server. Rename only a complete successful render into place. */
 static int update(const char *input, const char *output, unsigned long revision,
-                  char *(*render)(const char *, const char *, unsigned long)) {
+                  WatchRender render) {
     struct stat source, target;
     if (!stat(input, &source) && !stat(output, &target) &&
         source.st_dev == target.st_dev && source.st_ino == target.st_ino) {
@@ -206,7 +206,7 @@ static int update(const char *input, const char *output, unsigned long revision,
     pid_t pid = fork();
     if (pid == 0) {
         signal(SIGINT, SIG_DFL); signal(SIGTERM, SIG_DFL);
-        char *path = render(input, staging, revision);
+        char *path = render(input, staging, output, revision);
         int result = path ? 0 : 1;
         free(path); _exit(result);
     }
@@ -224,7 +224,7 @@ static int update(const char *input, const char *output, unsigned long revision,
 
 int watch_preview(const char *input, const char *output,
                   int (*launch)(const char *),
-                  char *(*render)(const char *, const char *, unsigned long)) {
+                  WatchRender render) {
     uint64_t accepted = 0, pending = 0;
     if (!fingerprint(input, &accepted)) {
         fprintf(stderr, "mdview: cannot read watched file\n"); return 1;
@@ -233,7 +233,7 @@ int watch_preview(const char *input, const char *output,
     if (!directory) return 1;
     char *slash = strrchr(directory, '/');
     if (slash == directory) slash[1] = '\0'; else *slash = '\0';
-    char *html = render(input, output, 1);
+    char *html = render(input, output, NULL, 1);
     if (!html) { free(directory); return 1; }
     int server = socket(AF_INET, SOCK_STREAM, 0), status = 1;
     struct sockaddr_in address = {0};

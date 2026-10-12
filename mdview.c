@@ -13,11 +13,18 @@
 #include "render_modules.h"
 #include "watch.h"
 #include ".build/watch_adapter.h"
+#include ".build/heading_styles.h"
+#include ".build/heading_adapter.h"
 
 /* A deliberately small, dependency-free Markdown renderer. Raw HTML is escaped. */
 typedef struct { char *s; size_t n, cap; } Buf;
 typedef struct { char **v; size_t n; } Lines;
 typedef struct { int kind; size_t indent, body; unsigned long start; } Marker;
+typedef struct { char *id, *text; int level; } Heading;
+typedef struct { Heading *v; size_t n, cap; } Headings;
+
+/* 0 = automatic outline, 1 = always, -1 = never. Shared with watch renders. */
+static int toc_mode;
 
 static void die(const char *message) {
     fprintf(stderr, "mdview: %s\n", message);
@@ -414,7 +421,122 @@ static void end_code(Buf *out) {
     append(out, code_module.after_code);
 }
 
-static void blocks(Buf *out, Lines l, unsigned depth, RenderModules *modules) {
+/* Decode only the entities emitted by escape(), never document-supplied HTML. */
+static void plain_text(Buf *out, const char *s, size_t n) {
+    for (size_t i = 0; i < n; ++i) {
+        const char *entities[] = {"&amp;", "&lt;", "&gt;", "&quot;", "&#39;"};
+        const char values[] = "&<>\"'";
+        size_t j = 0;
+        for (; j < sizeof(entities) / sizeof(*entities); ++j) {
+            size_t len = strlen(entities[j]);
+            if (len <= n - i && !memcmp(s + i, entities[j], len)) {
+                put(out, values[j]); i += len - 1; break;
+            }
+        }
+        if (j == sizeof(entities) / sizeof(*entities)) put(out, s[i]);
+    }
+}
+
+static int heading_id_used(const Headings *headings, const char *id) {
+    for (size_t i = 0; i < headings->n; ++i)
+        if (!strcmp(headings->v[i].id, id)) return 1;
+    return 0;
+}
+
+static void render_heading(Buf *out, Headings *headings, const char *s,
+                           size_t n, int level) {
+    Buf markup = {0}, text = {0}, slug = {0};
+    inline_md(&markup, s, n, 0, 1);
+    /* Use the rendered label, so formatting and link destinations never enter IDs. */
+    for (size_t i = 0; i < markup.n;) {
+        if (markup.s[i] == '<') {
+            const char *end = strchr(markup.s + i, '>');
+            if (!end) break;
+            if (!strncmp(markup.s + i, "<img ", 5)) {
+                const char *alt = strstr(markup.s + i, " alt=\"");
+                if (alt && alt < end) {
+                    alt += 6;
+                    const char *close = strchr(alt, '"');
+                    if (close && close < end) plain_text(&text, alt, (size_t)(close - alt));
+                }
+            }
+            i = (size_t)(end - markup.s) + 1;
+        } else {
+            size_t start = i;
+            while (i < markup.n && markup.s[i] != '<') ++i;
+            plain_text(&text, markup.s + start, i - start);
+        }
+    }
+    if (!text.s) append(&text, "");
+    int space = 0;
+    for (size_t i = 0; i < text.n; ++i) {
+        unsigned char c = (unsigned char)text.s[i];
+        if (isspace(c)) { space = slug.n > 0; continue; }
+        if (c >= 128 || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_') {
+            if (space) put(&slug, '-');
+            space = 0;
+            put(&slug, c >= 'A' && c <= 'Z' ? (char)(c + 'a' - 'A') : (char)c);
+        }
+    }
+    if (!slug.n) append(&slug, "section");
+    char *id = copy_n(slug.s, slug.n);
+    for (size_t suffix = 1; heading_id_used(headings, id); ++suffix) {
+        char number[32]; snprintf(number, sizeof(number), "-%zu", suffix);
+        Buf unique = {0}; append(&unique, slug.s); append(&unique, number);
+        free(id); id = unique.s;
+    }
+    free(slug.s);
+    if (headings->n == headings->cap) {
+        headings->cap = headings->cap ? headings->cap * 2 : 16;
+        Heading *v = realloc(headings->v, headings->cap * sizeof(*v));
+        if (!v) die("out of memory");
+        headings->v = v;
+    }
+    headings->v[headings->n++] = (Heading){id, text.s, level};
+    append(out, "<h"); put(out, (char)('0' + level)); append(out, " id=\"");
+    escape(out, id, strlen(id)); append(out, "\" tabindex=\"-1\">");
+    if (markup.n) append_n(out, markup.s, markup.n);
+    append(out, " <a href=\"#"); escape(out, id, strlen(id));
+    append(out, "\" class=\"heading-anchor\" aria-label=\"Link to section");
+    if (text.n) { append(out, ": "); escape(out, text.s, text.n); }
+    append(out, "\"><span aria-hidden=\"true\">#</span></a></h");
+    put(out, (char)('0' + level)); append(out, ">\n");
+    free(markup.s);
+}
+
+static void render_toc(Buf *out, const Headings *headings) {
+    if (!headings->n || toc_mode < 0 || (!toc_mode && headings->n < 4)) return;
+    append(out, "<details class=\"toc\"><summary>Table of contents</summary>\n"
+                "<nav aria-label=\"Table of contents\"><ul>\n");
+    int levels[6]; size_t depth = 1;
+    levels[0] = headings->v[0].level;
+    for (size_t i = 0; i < headings->n; ++i) {
+        const Heading *h = &headings->v[i];
+        if (i) {
+            if (h->level > levels[depth - 1]) {
+                append(out, "<ul>\n"); levels[depth++] = h->level;
+            } else {
+                append(out, "</li>\n");
+                /* A skipped level can share the current list; only close it
+                 * when this heading reaches or passes its parent level. */
+                while (depth > 1 && h->level <= levels[depth - 2]) {
+                    append(out, "</ul></li>\n"); --depth;
+                }
+                levels[depth - 1] = h->level;
+            }
+        }
+        append(out, "<li><a href=\"#"); escape(out, h->id, strlen(h->id));
+        append(out, "\" data-heading-id=\""); escape(out, h->id, strlen(h->id)); append(out, "\">");
+        if (h->text[0]) escape(out, h->text, strlen(h->text)); else append(out, "Untitled section");
+        append(out, "</a>");
+    }
+    append(out, "</li>\n");
+    while (--depth) append(out, "</ul></li>\n");
+    append(out, "</ul></nav></details>\n");
+}
+
+static void blocks(Buf *out, Lines l, unsigned depth, RenderModules *modules, Headings *headings) {
     if (depth > 64) { die("Markdown nesting exceeds 64 levels"); }
     for (size_t i = 0; i < l.n;) {
         const char *s = l.v[i];
@@ -450,13 +572,11 @@ static void blocks(Buf *out, Lines l, unsigned depth, RenderModules *modules) {
             if (end < n && end && s[body + end - 1] == ' ') {
                 n = end; while (n && s[body + n - 1] == ' ') --n;
             }
-            append(out, "<h"); put(out, (char)('0' + h)); put(out, '>');
-            inline_md(out, s + body, n, 0, 1);
-            append(out, "</h"); put(out, (char)('0' + h)); append(out, ">\n"); ++i; continue;
+            render_heading(out, headings, s + body, n, h); ++i; continue;
         }
         if (i + 1 < l.n && setext(l.v[i + 1]) && indent(s) < 4 && !rule(s) && !marker(s).kind && s[indent(s)] != '>') {
-            h = setext(l.v[i + 1]); append(out, h == 1 ? "<h1>" : "<h2>");
-            inline_md(out, s, strlen(s), 0, 1); append(out, h == 1 ? "</h1>\n" : "</h2>\n"); i += 2; continue;
+            h = setext(l.v[i + 1]);
+            render_heading(out, headings, s, strlen(s), h); i += 2; continue;
         }
         if (rule(s)) { append(out, "<hr>\n"); ++i; continue; }
         if (indent(s) <= 3 && s[indent(s)] == '>') {
@@ -468,7 +588,7 @@ static void blocks(Buf *out, Lines l, unsigned depth, RenderModules *modules) {
                 append(&quoted, l.v[i] + k); put(&quoted, '\n'); ++i;
             }
             Lines inner = split_lines(quoted.s); append(out, "<blockquote>\n");
-            blocks(out, inner, depth + 1, modules); append(out, "</blockquote>\n"); free_lines(inner); free(quoted.s); continue;
+            blocks(out, inner, depth + 1, modules, headings); append(out, "</blockquote>\n"); free_lines(inner); free(quoted.s); continue;
         }
         if (indent(s) >= 4) {
             begin_code(out, modules); put(out, '>'); size_t last = i;
@@ -510,7 +630,7 @@ static void blocks(Buf *out, Lines l, unsigned depth, RenderModules *modules) {
                     else break;
                     put(&item, '\n'); ++i;
                 }
-                Lines inner = split_lines(item.s); blocks(out, inner, depth + 1, modules);
+                Lines inner = split_lines(item.s); blocks(out, inner, depth + 1, modules, headings);
                 free_lines(inner); free(item.s); append(out, "</li>\n");
                 size_t next = i; while (next < l.n && blank(l.v[next])) ++next;
                 if (next < l.n) {
@@ -572,6 +692,29 @@ static void file_url(Buf *b, const char *path) {
     }
 }
 
+/* A bare #fragment would resolve against <base>, which points at source assets.
+ * Write absolute preview links so native navigation also works without scripts. */
+static int write_html(FILE *f, const Buf *html, const char *absolute) {
+    Buf url = {0}, escaped = {0};
+    file_url(&url, absolute); escape(&escaped, url.s, url.n); free(url.s);
+    const char *p = strstr(html->s, "<body>\n"), *end = strstr(p, "</main>\n");
+    size_t header = (size_t)(p - html->s);
+    int failed = fwrite(html->s, 1, header, f) != header;
+    const char *next;
+    while (!failed && end && (next = strstr(p, "<a href=\"#")) && next < end) {
+        size_t n = (size_t)(next - p);
+        if (fwrite(p, 1, n, f) != n ||
+            fputs("<a data-mdview-fragment href=\"", f) == EOF ||
+            fwrite(escaped.s, 1, escaped.n, f) != escaped.n) { failed = 1; break; }
+        p = next + strlen("<a href=\"");
+    }
+    if (!failed) {
+        size_t n = html->n - (size_t)(p - html->s);
+        failed = fwrite(p, 1, n, f) != n;
+    }
+    free(escaped.s); return failed;
+}
+
 static Buf read_input(const char *path) {
     int from_stdin = !strcmp(path, "-");
     FILE *f = from_stdin ? stdin : fopen(path, "rb");
@@ -611,18 +754,20 @@ static int open_browser(const char *path) {
 }
 
 static void usage(FILE *out) {
-    fputs("Usage: mdview [--watch] [--no-open] [-o FILE] INPUT.md\n"
+    fputs("Usage: mdview [--watch] [--no-open] [--toc | --no-toc] [-o FILE] INPUT.md\n"
           "\nRender Markdown to HTML and open it in your default browser.\n"
           "  -o, --output FILE  Save HTML to FILE instead of a temporary file\n"
           "      --no-open      Render without opening a browser\n"
           "      --watch        Keep a live local preview open until Ctrl+C\n"
+          "      --toc          Include a collapsible table of contents\n"
+          "      --no-toc       Hide the outline (default: show for 4+ headings)\n"
           "  -h, --help         Show this help\n"
           "      --version      Show version\n"
           "Use - for standard input, or -- before a filename beginning with -.\n", out);
 }
 
 static char *render_file(const char *input, const char *output, int watch,
-                         unsigned long revision) {
+                         unsigned long revision, const char *link_output) {
     if (output && strcmp(input, "-")) {
         struct stat in_stat, out_stat;
         if (!stat(input, &in_stat) && !stat(output, &out_stat) &&
@@ -640,10 +785,10 @@ static char *render_file(const char *input, const char *output, int watch,
         char *p = realloc(base, n + 2); if (!p) die("out of memory");
         base = p; if (!n || base[n - 1] != '/') { base[n] = '/'; base[n + 1] = '\0'; }
     }
-    RenderModules modules = {0}; Buf rendered = {0};
+    RenderModules modules = {0}; Buf rendered = {0}; Headings headings = {0};
     const char *content = source.s;
     if (source.n >= 3 && !memcmp(content, "\xEF\xBB\xBF", 3)) content += 3;
-    Lines lines = split_lines(content); blocks(&rendered, lines, 0, &modules);
+    Lines lines = split_lines(content); blocks(&rendered, lines, 0, &modules, &headings);
     free_lines(lines); free(source.s);
     Buf html = {0};
     append(&html, "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>");
@@ -652,6 +797,7 @@ static char *render_file(const char *input, const char *output, int watch,
     escape(&html, title, strlen(title)); append(&html, "</title>\n<base href=\"");
     Buf url = {0}; file_url(&url, base); escape(&html, url.s, url.n); free(url.s); free(base);
     append(&html, "\">\n<style>"); append(&html, style);
+    append(&html, (const char *)heading_styles);
     render_modules_styles(&modules, emit, &html);
     append(&html, "</style>\n");
     if (watch) {
@@ -662,10 +808,25 @@ static char *render_file(const char *input, const char *output, int watch,
         append(&html, (const char *)watch_adapter);
         append(&html, "\n</script>\n");
     }
-    append(&html, "</head>\n<body>\n<main>\n");
+    append(&html, "</head>\n<body>\n");
+    Buf outline = {0}; render_toc(&outline, &headings);
+    if (outline.n) {
+        append(&html, "<div class=\"document-layout\">\n<aside class=\"toc-sidebar\">\n");
+        append_n(&html, outline.s, outline.n);
+        append(&html, "</aside>\n");
+    }
+    append(&html, "<main>\n");
     if (rendered.n) append_n(&html, rendered.s, rendered.n);
+    for (size_t i = 0; i < headings.n; ++i) { free(headings.v[i].id); free(headings.v[i].text); }
+    free(headings.v);
     free(rendered.s);
     append(&html, "</main>\n");
+    if (outline.n) {
+        append(&html, "</div>\n<script data-mdview-headings>\n");
+        append(&html, (const char *)heading_adapter);
+        append(&html, "\n</script>\n");
+    }
+    free(outline.s);
     if (!render_modules_scripts(&modules, emit, &html)) { free(html.s); return NULL; }
     append(&html, "</body>\n</html>\n");
     FILE *f; char *temporary = NULL;
@@ -683,21 +844,22 @@ static char *render_file(const char *input, const char *output, int watch,
         output = temporary;
     }
     if (!f) { fprintf(stderr, "mdview: cannot write %s: %s\n", output, strerror(errno)); free(temporary); free(html.s); return NULL; }
-    int failed = fwrite(html.s, 1, html.n, f) != html.n;
+    char *absolute = realpath(output, NULL);
+    if (!absolute) { fclose(f); if (temporary) unlink(temporary); free(temporary); free(html.s); die("cannot resolve output path"); }
+    int failed = write_html(f, &html, link_output ? link_output : absolute);
     if (fclose(f)) failed = 1;
     free(html.s);
     if (failed) {
         fprintf(stderr, "mdview: error writing %s\n", output);
         if (temporary) unlink(temporary);
-        free(temporary); return NULL;
+        free(absolute); free(temporary); return NULL;
     }
-    char *absolute = realpath(output, NULL);
-    if (!absolute) { free(temporary); die("cannot resolve output path"); }
     free(temporary); return absolute;
 }
 
-static char *render_update(const char *input, const char *output, unsigned long revision) {
-    return render_file(input, output, 1, revision);
+static char *render_update(const char *input, const char *output, const char *link_output,
+                           unsigned long revision) {
+    return render_file(input, output, 1, revision, link_output);
 }
 
 int main(int argc, char **argv) {
@@ -706,9 +868,11 @@ int main(int argc, char **argv) {
         const char *arg = argv[i];
         if (options && !strcmp(arg, "--")) { options = 0; continue; }
         if (options && (!strcmp(arg, "--help") || !strcmp(arg, "-h"))) { usage(stdout); return 0; }
-        if (options && !strcmp(arg, "--version")) { puts("mdview 0.0.5"); return 0; }
+        if (options && !strcmp(arg, "--version")) { puts("mdview 0.0.6"); return 0; }
         if (options && !strcmp(arg, "--no-open")) { launch = 0; continue; }
         if (options && !strcmp(arg, "--watch")) { watch = 1; continue; }
+        if (options && !strcmp(arg, "--toc")) { toc_mode = 1; continue; }
+        if (options && !strcmp(arg, "--no-toc")) { toc_mode = -1; continue; }
         if (options && (!strcmp(arg, "--output") || !strcmp(arg, "-o"))) {
             if (++i == argc) die("--output requires a filename");
             output = argv[i]; continue;
@@ -724,7 +888,7 @@ int main(int argc, char **argv) {
         if (stat(input, &st) || !S_ISREG(st.st_mode)) die("--watch requires a regular Markdown file");
     }
     if (watch) return watch_preview(input, output, launch ? open_browser : NULL, render_update);
-    char *absolute = render_file(input, output, 0, 1);
+    char *absolute = render_file(input, output, 0, 1, NULL);
     if (!absolute) return 1;
     int status;
     puts(absolute); fflush(stdout);

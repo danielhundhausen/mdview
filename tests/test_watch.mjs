@@ -8,6 +8,10 @@ function page(options = {}) {
   const timers = [], listeners = new Map(), requests = [], scrolls = [], observers = [];
   const storage = new Map(options.saved ? [['mdview-scroll:/preview', JSON.stringify(options.saved)]] : []);
   const base = {href: 'file:///tmp/space%20%23%20%C3%BC/'};
+  const fragments = [{href: 'file:///tmp/out.html#installation', hash: '#installation'},
+    {href: 'file:///tmp/out.html#héllo', hash: '#h%C3%A9llo'},
+    {href: 'file:///tmp/out.html#', hash: ''}];
+  const toc = options.noToc ? null : {open: options.tocOpen ?? false};
   const history = {scrollRestoration: 'auto'};
   let reloaded = 0, height = options.height ?? 1000;
   const window = {
@@ -21,11 +25,15 @@ function page(options = {}) {
   };
   vm.runInNewContext(script, {
     location: {protocol: options.protocol ?? 'http:', origin: 'http://127.0.0.1:1234',
-      pathname: '/preview', reload() { ++reloaded; }},
+      pathname: '/preview', search: '?view=1', reload() { ++reloaded; }},
     document: {body: {}, addEventListener: window.addEventListener, querySelector(selector) {
       if (selector === 'base') return base;
+      if (selector === '.toc') return toc;
       assert.equal(selector, 'meta[name="mdview-revision"]');
       return {content: '1'};
+    }, querySelectorAll(selector) {
+      assert.equal(selector, 'a[data-mdview-fragment]');
+      return fragments;
     }},
     history, window, URL,
     sessionStorage: {
@@ -45,7 +53,7 @@ function page(options = {}) {
       return {ok: options.ok ?? true, async text() { return options.revision ?? '1\n'; }};
     },
   });
-  const result = {base, history, window, timers, requests, storage, scrolls, observers,
+  const result = {base, fragments, toc, history, window, timers, requests, storage, scrolls, observers,
     get reloaded() { return reloaded; },
     event(name) { for (const callback of [...(listeners.get(name) ?? [])]) callback(); },
     resize(newHeight) { height = newHeight; for (const o of observers) if (o.observing) o.callback(); },
@@ -61,6 +69,9 @@ function page(options = {}) {
 
 const unchanged = page();
 assert.equal(unchanged.base.href, 'http://127.0.0.1:1234/files/tmp/space%20%23%20%C3%BC/');
+assert.equal(unchanged.fragments[0].href, 'http://127.0.0.1:1234/preview?view=1#installation');
+assert.equal(unchanged.fragments[1].href, 'http://127.0.0.1:1234/preview?view=1#h%C3%A9llo');
+assert.equal(unchanged.fragments[2].href, 'http://127.0.0.1:1234/preview?view=1#');
 await unchanged.poll();
 assert.equal(unchanged.reloaded, 0);
 assert.equal(unchanged.requests.length, 1);
@@ -68,13 +79,14 @@ assert.equal(unchanged.requests[0].url, 'http://127.0.0.1:1234/revision');
 assert.equal(unchanged.requests[0].init.cache, 'no-store');
 assert.equal(unchanged.timers.length, 1);
 
-const changed = page({revision: '2\n'});
+const changed = page({revision: '2\n', tocOpen: true});
 await changed.poll();
 assert.equal(changed.reloaded, 1);
-assert.deepEqual(JSON.parse(changed.storage.get('mdview-scroll:/preview')), {x: 20, y: 700});
+assert.deepEqual(JSON.parse(changed.storage.get('mdview-scroll:/preview')), {x: 20, y: 700, tocOpen: true});
 assert.equal(changed.timers.length, 0);
 
-const restored = page({saved: {x: 30, y: 900}, height: 100});
+const restored = page({saved: {x: 30, y: 900, tocOpen: true}, height: 100});
+assert.equal(restored.toc.open, true);
 assert.equal(restored.history.scrollRestoration, 'manual');
 assert.equal(restored.storage.size, 0);
 restored.event('load');
@@ -115,10 +127,14 @@ assert.equal(blocked.history.scrollRestoration, 'auto');
 const corrupt = page({saved: {x: 'bad', y: 100}});
 assert.equal(corrupt.observers.length, 0);
 assert.equal(corrupt.history.scrollRestoration, 'auto');
+const removedToc = page({noToc: true, saved: {x: 0, y: 100, tocOpen: true}, revision: '2'});
+await removedToc.poll();
+assert.deepEqual(JSON.parse(removedToc.storage.get('mdview-scroll:/preview')), {x: 0, y: 100});
 
 const file = page({protocol: 'file:'});
 assert.equal(file.timers.length, 0);
 assert.equal(file.base.href, 'file:///tmp/space%20%23%20%C3%BC/');
+assert.equal(file.fragments[0].href, 'file:///tmp/out.html#installation');
 
 const parsing = page({deferDOM: true, saved: {x: 0, y: 400}});
 assert.equal(parsing.timers.length, 0);

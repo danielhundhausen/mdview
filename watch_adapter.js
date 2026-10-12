@@ -6,6 +6,15 @@
   base.href = location.origin + '/files' + new URL(base.href).pathname;
   const revision = document.querySelector('meta[name="mdview-revision"]').content;
   const key = 'mdview-scroll:' + location.pathname;
+  document.addEventListener('DOMContentLoaded', () => {
+    // Saved pages use their absolute file URL to override the asset <base>.
+    // In watch mode, keep heading, outline, and Markdown fragments on /preview.
+    for (const link of document.querySelectorAll('a[data-mdview-fragment]')) {
+      link.href = location.origin + location.pathname + location.search + (link.hash || '#');
+    }
+    const toc = document.querySelector('.toc');
+    if (toc && saved && typeof saved.tocOpen === 'boolean') toc.open = saved.tocOpen;
+  }, {once: true});
   let saved;
   try {
     saved = JSON.parse(sessionStorage.getItem(key));
@@ -48,7 +57,8 @@
       const response = await fetch(location.origin + '/revision', {cache: 'no-store'});
       if (response.ok && (await response.text()).trim() !== revision) {
         try {
-          sessionStorage.setItem(key, JSON.stringify({x: window.scrollX, y: window.scrollY}));
+          sessionStorage.setItem(key, JSON.stringify({x: window.scrollX, y: window.scrollY,
+            tocOpen: document.querySelector('.toc')?.open}));
         } catch (_) { /* Native reload scroll restoration remains available. */ }
         location.reload();
         return;

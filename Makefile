@@ -8,7 +8,7 @@ all: mdview
 SOURCES = mdview.c watch.c render_modules.c mermaid_module.c code_module.c vendor/miniz/miniz_tinfl.c
 MINIZ_HEADERS = $(wildcard vendor/miniz/*.h)
 MINIZ_FLAGS = -DMINIZ_NO_ZLIB_APIS -DMINIZ_NO_ARCHIVE_APIS -DMINIZ_NO_DEFLATE_APIS
-ASSET_HEADERS = mermaid_asset.h .build/miniz_license.h .build/mermaid_styles.h .build/mermaid_adapter.h .build/diagram_viewer.h .build/code_styles.h .build/code_adapter.h .build/highlight_runtime.h .build/highlight_license.h .build/watch_adapter.h
+ASSET_HEADERS = mermaid_asset.h .build/miniz_license.h .build/mermaid_styles.h .build/mermaid_adapter.h .build/diagram_viewer.h .build/code_styles.h .build/code_adapter.h .build/highlight_runtime.h .build/highlight_license.h .build/watch_adapter.h .build/heading_styles.h .build/heading_adapter.h
 
 mdview: $(SOURCES) render_modules.h watch.h $(ASSET_HEADERS) vendor/mermaid/asset_info.h $(MINIZ_HEADERS)
 	$(CC) $(CPPFLAGS) $(MINIZ_FLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $(SOURCES)
@@ -29,6 +29,9 @@ mermaid_asset.h: vendor/mermaid/mermaid-12.1.0.deflate .build/embed_asset
 .build/code_styles.h: code_styles.css .build/embed_asset
 	.build/embed_asset $< code_styles $@ --text
 
+.build/heading_styles.h: heading_styles.css .build/embed_asset
+	.build/embed_asset $< heading_styles $@ --text
+
 .build/highlight_runtime.h: vendor/highlight/highlight.min.js .build/embed_asset
 	.build/embed_asset $< highlight_runtime $@ --text
 
@@ -45,6 +48,7 @@ test-js: mdview
 	node tests/test_mermaid.mjs ./mdview
 	node tests/test_code.mjs ./mdview
 	node tests/test_watch.mjs
+	node tests/test_headings.mjs ./mdview
 
 install: mdview
 	install -d "$(DESTDIR)$(PREFIX)/bin"

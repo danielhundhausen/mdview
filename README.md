@@ -21,6 +21,10 @@ make
 ./mdview foo.md
 ```
 
+To explore the supported elements and syntax highlighting, render the repository
+showcase with `./mdview example.md`. The example and its local illustration are
+excluded from source archives and are not installed with the executable.
+
 To use `mdview` from anywhere, install it into a directory on your `PATH`:
 
 ```sh
@@ -57,10 +61,34 @@ Relative images and links resolve against the source file's directory, even
 when the HTML is in a temporary directory. For standard input, they resolve
 against the current working directory. The generated page includes its own
 CSS with a warm paper layout, serif headings, system fonts, light/dark themes,
-accessible link focus indicators, responsive layout, and print styles. Ordinary
-Markdown pages use no JavaScript, web fonts, or remote stylesheets. Mermaid
-diagrams load a browser renderer as described below. Remote images can still
-be loaded if the document references them.
+accessible link focus indicators, responsive layout, and print styles. Pages
+without code blocks use no JavaScript, web fonts, or remote stylesheets. Code
+blocks and Mermaid diagrams include their browser assets as described below.
+Remote images can still be loaded if the document references them.
+
+## Code blocks
+
+Fenced blocks with a supported language label (for example `js`, `python`, `c`,
+`bash`, `json`, `html`, or `sql`) receive syntax highlighting from the embedded
+**Highlight.js 11.12.0** common-language build. Language aliases and uppercase
+labels are supported. Unlabeled, indented, and unknown-language blocks remain
+plain text; language detection is not automatic.
+
+Every fenced or indented code block has a copy icon in its upper-right corner,
+including Mermaid's source disclosure. Copying preserves the rendered source text, whitespace,
+and trailing newline, without syntax markup or button labels. The existing
+Markdown parser normalizes CRLF line endings and expands tabs to four-column
+stops. A local-file clipboard fallback is used when the browser's Clipboard API
+is unavailable or denies access. Buttons show success or failure, announce the
+result to assistive technology, and allow retries. The icon briefly becomes a
+checkmark on success; a failed copy shows a hint for copying manually. These
+controls sit beside the content without adding a toolbar row.
+
+Code assets are embedded once, only when a document contains block code, and
+work offline without a CDN or runtime files. Syntax highlighting and buttons
+require JavaScript; escaped source remains readable when it is disabled.
+The code palette works with both document themes, and copy controls are hidden
+when printing. Code pages add approximately 134 KB of CSS and JavaScript.
 
 ## Mermaid diagrams
 
@@ -75,14 +103,15 @@ flowchart LR
 ````
 
 Diagrams use the document's colors and system font, adapt when the light/dark
-theme changes, and scale down to fit the reading column. Use **Expand** to open
-a diagram in a full-screen overlay, with zoom controls, **Fit width**, and a
+theme changes, and scale down to fit the reading column. Use the expand icon in
+the upper-right corner to open a diagram in a full-screen overlay, with zoom
+controls, **Fit width**, and a
 100% view. Close with the button, Escape, or a click on the backdrop. The original
 diagram source is available in a disclosure below each diagram.
 
 The executable contains **Mermaid 12.1.0**, compressed with DEFLATE. A small
 vendored C decompressor expands the library into the generated HTML only when
-Mermaid fences are present. The binary is approximately 1.66 MB; diagram pages
+Mermaid fences are present. The binary is approximately 1.8 MB; diagram pages
 include approximately 5.5 MB of JavaScript. Ordinary pages remain small.
 
 Diagram rendering requires browser JavaScript and works offline. No Node.js,
@@ -98,6 +127,7 @@ HTML labels. See the [Mermaid usage guide](https://mermaid.js.org/config/usage).
 - ATX (`#`) and single-line Setext headings, paragraphs, and horizontal rules
 - Bold, italics, combined emphasis, strikethrough, and punctuation escapes
 - Inline code, fenced code with optional language labels, and indented code
+- Offline syntax highlighting for supported fenced languages and code copy buttons
 - Mermaid diagrams in `mermaid` fences, including inside lists and blockquotes
 - Bullet and numbered lists, nested lists, and task checkboxes
 - Blockquotes, including nested blocks
@@ -108,7 +138,7 @@ HTML labels. See the [Mermaid usage guide](https://mermaid.js.org/config/usage).
 
 This is a pragmatic Markdown subset, not a full CommonMark or GitHub Flavored
 Markdown implementation. Reference-style links, footnotes, automatic heading
-IDs, bare URL linking, syntax highlighting, and some complex delimiter/list/
+IDs, bare URL linking, and some complex delimiter/list/
 table edge cases are not supported. Raw HTML is displayed as text. URL schemes
 are limited to `http`, `https`, `mailto`, and `file`, plus relative paths.
 Nesting is bounded to keep malformed documents from exhausting the C stack.
@@ -123,9 +153,14 @@ make test-js
 `make test` requires Python 3 and covers rendering, malformed input, CLI errors,
 asset paths, temporary-file permissions, module activation, and browser launching
 with a stub command. It also verifies the decompressed library's SHA-256 against
-the vendored manifest. `make test-js` requires Node.js and tests the Mermaid
-adapter with a mocked renderer, including missing-runtime fallback, syntax
-errors, and theme changes. Neither suite opens a browser or downloads Mermaid.
+the vendored manifest. It also covers conditional code assets, controls in nested
+blocks, safe HTML escaping, and the vendored highlighter's checksums.
+`make test-js` requires Node.js and tests the Mermaid adapter with a mocked
+renderer, including missing-runtime fallback, syntax errors, and theme changes.
+It executes the actual bundled highlighter and code adapter with DOM/clipboard
+stubs to verify languages and aliases, copied text, missing-runtime fallback,
+clipboard failures, retries, and focus/selection restoration. Neither suite
+opens a browser or downloads dependencies.
 
 For a real-library integration test without browser control, install `jsdom`
 and `svgdom` into a temporary directory and run:
@@ -133,6 +168,7 @@ and `svgdom` into a temporary directory and run:
 ```sh
 npm install --prefix /tmp/mdview-dom-test --no-audit --no-fund jsdom@27.0.1 svgdom@0.1.22
 node tests/render_offline.mjs ./mdview tests/fixtures/opentelemetry-demo.md /tmp/mdview-result /tmp/mdview-dom-test
+node tests/test_code.mjs ./mdview /tmp/mdview-dom-test
 ```
 
 This executes the generated HTML's actual Mermaid bundle in a DOM emulator,
@@ -140,17 +176,23 @@ uses SVG font metrics and geometry from svgdom, blocks network requests, renders
 two substantial upstream OpenTelemetry diagrams in light and dark themes, and
 writes SVGs, a rendered HTML snapshot, and a JSON report. It verifies the actual
 library integration; it does not replace a browser-specific layout test.
+The code suite's optional jsdom checks execute the generated HTML, highlight
+actual DOM nodes, click copy controls, verify clipboard fallback cleanup, and
+check readable source with JavaScript disabled, while blocking network requests.
 
 ### Rendering modules
 
 Fenced-code extensions live outside the Markdown parser. `render_modules.h`
 defines the module interface, `render_modules.c` registers modules and tracks
 which are used by a document, and `mermaid_module.c` owns Mermaid's markup and
-runtime. `mermaid_styles.css`, `mermaid_adapter.js`, and `diagram_viewer.js` own
+runtime. `code_module.c` supplies shared code decoration and highlighting assets;
+`code_styles.css` and `code_adapter.js` own highlighting styles and copy behavior.
+`mermaid_styles.css`, `mermaid_adapter.js`, and `diagram_viewer.js` own
 the diagram styles, rendering adapter, and modal viewer. These assets are
 embedded by the C build helper. To add another renderer, implement a `RenderModule`,
 register it, and add its C source to `SOURCES` in the Makefile. Module assets are
 included once, only in documents that use the corresponding fence language.
+Shared modules without a fence language can be activated with `render_module_use`.
 The optional `emit_runtime` callback supports compressed runtime assets. The
 build-time asset converter is also written in C; normal builds use only Make
 and a C99 compiler, with no network access.
@@ -165,6 +207,7 @@ make test
 
 ## License
 
-mdview is MIT licensed; see [LICENSE](LICENSE). Bundled Mermaid and miniz retain
-their upstream licenses under `vendor/`. The OpenTelemetry test diagrams are
-CC BY 4.0, with source attribution and license under `tests/fixtures/`.
+mdview is MIT licensed; see [LICENSE](LICENSE). Bundled Mermaid, miniz, and
+Highlight.js retain their upstream licenses under `vendor/`. The OpenTelemetry
+test diagrams are CC BY 4.0, with source attribution and license under
+`tests/fixtures/`.

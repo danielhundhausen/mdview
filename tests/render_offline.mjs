@@ -16,6 +16,7 @@ const htmlPath = join(output, 'opentelemetry.html');
 execFileSync(program, ['--no-open', '-o', htmlPath, fixture]);
 let networkAttempts = 0;
 const warnings = [];
+const copied = [];
 class NoNetwork extends ResourceLoader {
   fetch(url) { networkAttempts++; throw Error('Network disabled: ' + url); }
 }
@@ -30,6 +31,9 @@ const dom = new JSDOM(readFileSync(htmlPath, 'utf8'), {
   runScripts: 'dangerously', pretendToBeVisual: true,
   resources: new NoNetwork(), virtualConsole,
   beforeParse(window) {
+    Object.defineProperty(window.navigator, 'clipboard', {
+      value: {async writeText(text) { copied.push(text); }},
+    });
     window.matchMedia = () => media;
     window.structuredClone = structuredClone;
     window.fetch = () => { networkAttempts++; throw Error('Network disabled'); };
@@ -66,18 +70,23 @@ const dom = new JSDOM(readFileSync(htmlPath, 'utf8'), {
     };
   },
 });
-const adapter = dom.window.document.querySelector('script[type="module"]').textContent;
 const start = performance.now();
-await dom.window.eval('(async () => {' + adapter + '})()');
+for (const adapter of dom.window.document.querySelectorAll('script[type="module"]'))
+  await dom.window.eval('(async () => {' + adapter.textContent + '})()');
 const elapsed = performance.now() - start;
 const figures = [...dom.window.document.querySelectorAll('.md-diagram')];
 assert.equal(figures.length, 2);
 const diagrams = [];
 for (const [index, figure] of figures.entries()) {
   assert.ok(figure.hasAttribute('data-rendered'), figure.querySelector('.diagram-status').textContent + '\n' + warnings.join('\n'));
-  const svg = figure.querySelector('svg');
+  const svg = figure.querySelector('.diagram-canvas svg');
   assert.equal(svg.style.width, '100%');
   assert.equal(figure.querySelector('.diagram-toolbar').hidden, false);
+  assert.equal(figure.querySelector('.diagram-expand').getAttribute('aria-label'), 'Expand diagram');
+  assert.equal(figure.querySelector('.diagram-expand').textContent, '');
+  assert.ok(figure.querySelector('.diagram-expand svg[aria-hidden="true"]'));
+  assert.equal(dom.window.getComputedStyle(figure).position, 'relative');
+  assert.equal(dom.window.getComputedStyle(figure.querySelector('.diagram-toolbar')).position, 'absolute');
   for (const path of svg.querySelectorAll('.node>path.outer-path')) {
     if (!/^M0,.*? a/.test(path.getAttribute('d'))) continue;
     assert.match(path.parentElement.querySelector('.label').getAttribute('transform'), /^translate\(0,/);
@@ -94,14 +103,26 @@ const report = {backend:'Mermaid 12.1.0 in jsdom, SVG geometry/font metrics from
 
 // Real DOM interaction checks: move the original SVG, zoom, close and restore focus.
 const document = dom.window.document;
+assert.equal(document.querySelectorAll('.code-copy').length, figures.length);
+assert.ok([...document.querySelectorAll('.code-toolbar')].every(toolbar => !toolbar.hidden));
+for (const figure of figures) {
+  const source = figure.querySelector('code');
+  assert.equal(source.classList.contains('hljs'), false);
+  assert.equal(dom.window.getComputedStyle(figure.querySelector('pre')).marginTop, '0px');
+  figure.querySelector('.code-copy').click();
+  await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+  assert.equal(copied.at(-1), source.textContent);
+  assert.equal(figure.querySelector('.code-copy').dataset.state, 'success');
+}
+report.sourceCopyPassed = true;
 const figure = figures[0], button = figure.querySelector('.diagram-expand');
-const originalSVG = figure.querySelector('svg');
+const originalSVG = figure.querySelector('.diagram-canvas svg');
 document.documentElement.style.overflow = 'scroll';
 button.focus(); button.click();
 const overlay = document.querySelector('.diagram-overlay');
 assert.ok(overlay.open);
 assert.equal(overlay.querySelector('svg'), originalSVG);
-assert.equal(figure.querySelector('svg'), null);
+assert.equal(figure.querySelector('.diagram-canvas svg'), null);
 assert.equal(document.documentElement.style.overflow, 'hidden');
 assert.equal(document.activeElement, overlay.querySelector('[data-action="close"]'));
 // Give the emulated viewport a width; jsdom has no layout engine.
@@ -119,7 +140,7 @@ overlay.querySelector('[data-action="actual"]').click();
 assert.equal(parseFloat(originalSVG.style.width), originalSVG.viewBox.baseVal.width);
 overlay.dispatchEvent(new dom.window.Event('cancel', {cancelable:true}));
 assert.equal(overlay.open, false);
-assert.equal(figure.querySelector('svg'), originalSVG);
+assert.equal(figure.querySelector('.diagram-canvas svg'), originalSVG);
 assert.equal(originalSVG.style.width, '100%');
 assert.equal(document.activeElement, button);
 assert.equal(document.documentElement.style.overflow, 'scroll');
@@ -128,20 +149,20 @@ overlay.querySelector('[data-action="close"]').click();
 assert.equal(overlay.open, false);
 assert.equal(document.activeElement, button);
 // Only one overlay is used even when switching diagrams.
-const secondSVG = figures[1].querySelector('svg');
+const secondSVG = figures[1].querySelector('.diagram-canvas svg');
 button.click(); figures[1].querySelector('.diagram-expand').click();
 await Promise.resolve();
 assert.equal(document.querySelectorAll('.diagram-overlay').length, 1);
 assert.ok(overlay.open);
 assert.equal(overlay.querySelector('svg'), secondSVG);
-assert.equal(figures[1].querySelector('svg'), null);
-assert.equal(figure.querySelector('svg'), originalSVG);
+assert.equal(figures[1].querySelector('.diagram-canvas svg'), null);
+assert.equal(figure.querySelector('.diagram-canvas svg'), originalSVG);
 overlay.dispatchEvent(new dom.window.MouseEvent('click', {bubbles:true}));
 assert.equal(overlay.open, false);
 button.click();
 dom.window.dispatchEvent(new dom.window.Event('beforeprint'));
 assert.equal(overlay.open, false);
-assert.equal(figure.querySelector('svg'), originalSVG);
+assert.equal(figure.querySelector('.diagram-canvas svg'), originalSVG);
 report.viewerControlsPassed = true;
 report.viewerQueuedClosePassed = true;
 report.viewerPrintRestorePassed = true;
@@ -156,13 +177,13 @@ button.click();
 await media.callback();
 assert.ok(overlay.open);
 assert.notEqual(overlay.querySelector('svg'), originalSVG);
-assert.equal(figure.querySelector('svg'), null);
+assert.equal(figure.querySelector('.diagram-canvas svg'), null);
 overlay.querySelector('[data-action="close"]').click();
-assert.ok(figure.querySelector('svg'));
+assert.ok(figure.querySelector('.diagram-canvas svg'));
 for (const [index, figure] of figures.entries()) {
   assert.ok(figure.hasAttribute('data-rendered'), warnings.join('\n'));
   writeFileSync(join(output, 'diagram-' + (index + 1) + '-dark.svg'),
-    figure.querySelector('svg').outerHTML.replaceAll(dom.window.location.href + '#', '#'));
+    figure.querySelector('.diagram-canvas svg').outerHTML.replaceAll(dom.window.location.href + '#', '#'));
 }
 assert.equal(networkAttempts, 0);
 report.darkThemePassed = true;

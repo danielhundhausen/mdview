@@ -401,6 +401,17 @@ static int block_start(const char *s) {
            (indent(s) <= 3 && s[indent(s)] == '>') || marker(s).kind;
 }
 
+static void begin_code(Buf *out, RenderModules *modules) {
+    render_module_use(modules, &code_module);
+    append(out, code_module.before_code);
+    append(out, "<pre><code");
+}
+
+static void end_code(Buf *out) {
+    append(out, "</code></pre>\n");
+    append(out, code_module.after_code);
+}
+
 static void blocks(Buf *out, Lines l, unsigned depth, RenderModules *modules) {
     if (depth > 64) { die("Markdown nesting exceeds 64 levels"); }
     for (size_t i = 0; i < l.n;) {
@@ -415,7 +426,7 @@ static void blocks(Buf *out, Lines l, unsigned depth, RenderModules *modules) {
             const RenderModule *module = (!info[lang] || isspace((unsigned char)info[lang]))
                 ? render_module_find(modules, info, lang) : NULL;
             if (module) append(out, module->before_code);
-            append(out, "<pre><code");
+            begin_code(out, modules);
             if (lang) { append(out, " class=\"language-"); escape(out, info, lang); put(out, '"'); }
             put(out, '>'); ++i;
             while (i < l.n) {
@@ -425,7 +436,7 @@ static void blocks(Buf *out, Lines l, unsigned depth, RenderModules *modules) {
                 if (spaces < strip) strip = spaces;
                 escape(out, l.v[i] + strip, strlen(l.v[i] + strip)); put(out, '\n'); ++i;
             }
-            append(out, "</code></pre>\n");
+            end_code(out);
             if (module) append(out, module->after_code);
             continue;
         }
@@ -458,14 +469,14 @@ static void blocks(Buf *out, Lines l, unsigned depth, RenderModules *modules) {
             blocks(out, inner, depth + 1, modules); append(out, "</blockquote>\n"); free_lines(inner); free(quoted.s); continue;
         }
         if (indent(s) >= 4) {
-            append(out, "<pre><code>"); size_t last = i;
+            begin_code(out, modules); put(out, '>'); size_t last = i;
             while (last < l.n && (blank(l.v[last]) || indent(l.v[last]) >= 4)) ++last;
             size_t end = last; while (end > i && blank(l.v[end - 1])) --end;
             for (; i < end; ++i) {
                 const char *p = blank(l.v[i]) ? "" : l.v[i] + 4;
                 escape(out, p, strlen(p)); put(out, '\n');
             }
-            i = last; append(out, "</code></pre>\n"); continue;
+            i = last; end_code(out); continue;
         }
         Marker first = marker(s);
         if (first.kind) {
@@ -613,7 +624,7 @@ int main(int argc, char **argv) {
         const char *arg = argv[i];
         if (options && !strcmp(arg, "--")) { options = 0; continue; }
         if (options && (!strcmp(arg, "--help") || !strcmp(arg, "-h"))) { usage(stdout); return 0; }
-        if (options && !strcmp(arg, "--version")) { puts("mdview 0.0.3"); return 0; }
+        if (options && !strcmp(arg, "--version")) { puts("mdview 0.0.4"); return 0; }
         if (options && !strcmp(arg, "--no-open")) { launch = 0; continue; }
         if (options && (!strcmp(arg, "--output") || !strcmp(arg, "-o"))) {
             if (++i == argc) die("--output requires a filename");

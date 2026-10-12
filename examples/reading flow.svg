@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 180" role="img" aria-labelledby="title desc">
+  <title id="title">Write, render, read</title>
+  <desc id="desc">Three connected cards show the path from Markdown to mdview to a readable page.</desc>
+  <rect width="760" height="180" rx="16" fill="#f4f0e8"/>
+  <g fill="#fffdf9" stroke="#e5dfd4" stroke-width="2">
+    <rect x="28" y="28" width="200" height="124" rx="12"/>
+    <rect x="280" y="28" width="200" height="124" rx="12"/>
+    <rect x="532" y="28" width="200" height="124" rx="12"/>
+  </g>
+  <g fill="none" stroke="#a44832" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M240 90h28m-8-8 8 8-8 8M492 90h28m-8-8 8 8-8 8"/>
+  </g>
+  <g font-family="system-ui, sans-serif" text-anchor="middle">
+    <g fill="#a44832" font-size="13" font-weight="600">
+      <text x="128" y="60">01 / WRITE</text>
+      <text x="380" y="60">02 / RENDER</text>
+      <text x="632" y="60">03 / READ</text>
+    </g>
+    <g fill="#343630" font-size="23" font-weight="600">
+      <text x="128" y="98">Markdown</text>
+      <text x="380" y="98">mdview</text>
+      <text x="632" y="98">Your browser</text>
+    </g>
+    <g fill="#6f7369" font-size="13">
+      <text x="128" y="126">Text, code, diagrams</text>
+      <text x="380" y="126">A self-contained HTML page</text>
+      <text x="632" y="126">Highlight, explore, copy</text>
+    </g>
+  </g>
+</svg>

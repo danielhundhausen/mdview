@@ -1,13 +1,16 @@
-.md-diagram{margin:1.6em 0;padding:1.25rem;background:var(--surface);border:1px solid var(--line);border-radius:8px}
-.diagram-canvas{overflow:hidden;padding:.5rem 0 1rem}.diagram-canvas[hidden]{display:none}
+.md-diagram{position:relative;margin:1.6em 0;padding:1.25rem;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+.diagram-canvas{overflow:hidden;padding:.5rem 2rem 1rem 0}.diagram-canvas[hidden]{display:none}
 .diagram-canvas svg{display:block;width:100%;margin:0 auto;height:auto;max-width:100%}
 .diagram-canvas:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
 .md-diagram details{margin:0}.md-diagram summary{font-size:.82em;color:var(--muted);cursor:pointer}
-.md-diagram details pre{margin:.75rem 0 0}.diagram-status{font-size:.85em;color:var(--muted);margin:.75rem 0 0}
-.diagram-toolbar{display:flex;justify-content:flex-end;margin:0 0 .5rem}.diagram-toolbar[hidden]{display:none}
+.md-diagram details .md-code-block{margin:.75rem 0 0}.diagram-status{font-size:.85em;color:var(--muted);margin:.75rem 0 0}
+.diagram-toolbar{position:absolute;top:.65rem;right:.65rem;z-index:1}.diagram-toolbar[hidden]{display:none}
 .diagram-button{font:600 .8rem/1.4 system-ui,sans-serif;color:var(--fg);background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:.4rem .65rem;cursor:pointer;white-space:nowrap}
 .diagram-button:hover{background:var(--surface)}.diagram-button:disabled{opacity:.45;cursor:not-allowed}
 .diagram-button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.diagram-expand{display:grid;place-items:center;width:2rem;height:2rem;padding:0;border:0;border-radius:5px;background:var(--surface);color:var(--muted)}
+.diagram-expand:hover,.diagram-expand:focus-visible{background:var(--paper);color:var(--fg)}
+.diagram-expand svg{width:1.125rem;height:1.125rem;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
 .diagram-overlay{width:calc(100vw - 2rem);height:calc(100dvh - 2rem);max-width:none;max-height:none;margin:auto;padding:0;border:1px solid var(--line);border-radius:12px;background:var(--paper);color:var(--fg);box-shadow:0 20px 80px #0005}
 .diagram-overlay[open]{display:flex;flex-direction:column}.diagram-overlay::backdrop{background:#0008;backdrop-filter:blur(4px)}
 .diagram-overlay-header{flex:none;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;padding:1rem 1.25rem;border-bottom:1px solid var(--line)}
@@ -18,4 +21,4 @@
 .diagram-overlay-close{margin-left:.5rem}
 @media(max-width:600px){.md-diagram{padding:.85rem}}
 @media(max-width:600px){.diagram-overlay{width:100vw;height:100dvh;border:0;border-radius:0}.diagram-overlay-header{padding:.75rem;gap:.5rem}.diagram-overlay-canvas{padding:.75rem}}
-@media print{.md-diagram{break-inside:avoid}.md-diagram[data-rendered] details,.diagram-toolbar,.diagram-overlay{display:none!important}.diagram-canvas{overflow:visible}.diagram-canvas svg{max-width:100%;width:100%!important}}
+@media print{.md-diagram{break-inside:avoid}.md-diagram[data-rendered] details,.diagram-toolbar,.diagram-overlay{display:none!important}.diagram-canvas{overflow:visible;padding-right:0}.diagram-canvas svg{max-width:100%;width:100%!important}}

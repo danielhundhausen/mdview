@@ -1,0 +1,8 @@
+{
+  "version": "11.12.0",
+  "source_url": "https://raw.githubusercontent.com/highlightjs/cdn-release/11.12.0/build/highlight.min.js",
+  "license_url": "https://raw.githubusercontent.com/highlightjs/highlight.js/11.12.0/LICENSE",
+  "source_sha256": "8ab71eb09c51f501e5e25157d9cff100e46cc29bcbfc744d0b746d451fca7f53",
+  "asset_sha256": "77a061531c8b78b77e0ecb36efd4677fe21d74689456a48842f2b8b0d6a6992c",
+  "transformation": "Replace literal <!-- and <script in regular expressions with \\x3c!-- and \\x3cscript to safely embed in an HTML script element."
+}

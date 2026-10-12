@@ -1,0 +1,21 @@
+/* Code assets are emitted only for documents with block code. */
+.md-code-block{position:relative;margin:0 0 1.3em;border-radius:8px;background:var(--code-bg);color:var(--code-fg);min-width:0}
+/* A narrow right inset keeps long lines and their scrollbar clear of the icon. */
+.md-code-block>pre{margin:0 2.75rem 0 0;padding-right:.75rem;min-height:3rem}
+.code-toolbar{position:absolute;top:.65rem;right:.65rem;z-index:1;font:.8rem/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif}
+.code-toolbar[hidden]{display:none}
+.code-copy{display:grid;place-items:center;width:2rem;height:2rem;padding:0;cursor:pointer;color:inherit;background:var(--code-bg);border:0;border-radius:5px;opacity:.7}
+.code-copy:hover,.code-copy:focus-visible{opacity:1;background:#ffffff15}.code-copy:focus-visible{outline:2px solid var(--code-fg);outline-offset:2px}.code-copy:disabled{cursor:wait;opacity:.45}
+.code-icon{display:none;width:1.125rem;height:1.125rem;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.code-copy[data-state="idle"] .code-icon-copy,.code-copy[data-state="success"] .code-icon-success,.code-copy[data-state="error"] .code-icon-error{display:block}
+.code-copy[data-state="success"]{color:#b4d99a;opacity:1}.code-copy[data-state="error"]{color:#f3aaa0;opacity:1}
+.code-status{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.code-copy[data-state="error"]+.code-status{top:calc(100% + .5rem);right:0;width:max-content;max-width:min(22rem,calc(100vw - 6rem));height:auto;margin:0;padding:.5rem .75rem;overflow:visible;clip-path:none;white-space:normal;border:1px solid #ffffff30;border-radius:5px;background:var(--code-bg);color:var(--code-fg);box-shadow:0 2px 8px #0003}
+.hljs-keyword,.hljs-selector-tag,.hljs-literal,.hljs-section,.hljs-link{color:#e6a7d6}
+.hljs-string,.hljs-regexp,.hljs-meta .hljs-string,.hljs-addition{color:#b4d99a}
+.hljs-number,.hljs-built_in,.hljs-type,.hljs-params,.hljs-attribute{color:#f1c38d}
+.hljs-title,.hljs-name,.hljs-selector-id,.hljs-selector-class{color:#a7cff2}
+.hljs-comment,.hljs-quote,.hljs-meta{color:#b0b7ae}
+.hljs-variable,.hljs-template-variable,.hljs-symbol,.hljs-bullet,.hljs-deletion{color:#f3aaa0}
+.hljs-emphasis{font-style:italic}.hljs-strong{font-weight:700}
+@media print{.md-code-block{break-inside:avoid}.md-code-block>pre{margin-right:0;padding-right:1.5rem}.code-toolbar{display:none}.md-code-block .hljs [class]{color:inherit}}

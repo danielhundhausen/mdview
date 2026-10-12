@@ -3,14 +3,19 @@
 #include <string.h>
 
 /* Add fenced-code renderers here; each module brings its own assets. */
-static const RenderModule *const registry[] = { &mermaid_module };
+static const RenderModule *const registry[] = { &mermaid_module, &code_module };
 #define MODULE_COUNT (sizeof(registry) / sizeof(*registry))
 typedef char modules_fit_bitset[MODULE_COUNT <= sizeof(unsigned) * CHAR_BIT ? 1 : -1];
+
+void render_module_use(RenderModules *state, const RenderModule *module) {
+    for (size_t i = 0; i < MODULE_COUNT; ++i)
+        if (registry[i] == module) { state->used |= 1u << i; return; }
+}
 
 const RenderModule *render_module_find(RenderModules *state, const char *language,
                                        size_t length) {
     for (size_t i = 0; i < MODULE_COUNT; ++i) {
-        if (strlen(registry[i]->language) == length &&
+        if (registry[i]->language && strlen(registry[i]->language) == length &&
             !memcmp(registry[i]->language, language, length)) {
             state->used |= 1u << i;
             return registry[i];

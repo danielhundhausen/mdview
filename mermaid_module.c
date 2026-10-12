@@ -34,7 +34,8 @@ static int emit_runtime(RenderEmit emit, void *context) {
 const RenderModule mermaid_module = {
     "mermaid",
     "<figure class=\"md-diagram\">\n"
-    "<div class=\"diagram-toolbar\" hidden><button type=\"button\" class=\"diagram-button diagram-expand\" aria-haspopup=\"dialog\">Expand <span aria-hidden=\"true\">&#8599;</span></button></div>\n"
+    "<div class=\"diagram-toolbar\" hidden><button type=\"button\" class=\"diagram-button diagram-expand\" aria-haspopup=\"dialog\" aria-label=\"Expand diagram\" title=\"Expand diagram\">"
+    "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\" focusable=\"false\"><path d=\"M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5\"/></svg></button></div>\n"
     "<div class=\"diagram-canvas\" role=\"region\" aria-label=\"Rendered Mermaid diagram\" tabindex=\"0\" hidden></div>\n"
     "<details open><summary>Diagram source</summary>\n",
     "</details>\n<p class=\"diagram-status\" role=\"status\">Diagram preview requires JavaScript. Source is shown above.</p>\n</figure>\n",

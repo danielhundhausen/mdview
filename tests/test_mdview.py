@@ -106,9 +106,11 @@ class MdviewTests(unittest.TestCase):
                            "~~~mermaid\nsequenceDiagram\n  Alice->>Bob: Hello\n~~~\n")
         self.assertEqual(html.count('<figure class="md-diagram">'), 2)
         self.assertEqual(html.count("<details open>"), 2)
+        self.assertEqual(html.count('aria-label="Expand diagram" title="Expand diagram"'), 2)
+        self.assertNotIn('>Expand <span', html)
         self.assertIn("Alice-&gt;&gt;Bob: Hello", html)
         full = (self.root / "out.html").read_text()
-        self.assertEqual(full.count('<script type="module">'), 1)
+        self.assertEqual(full.count('<script type="module">'), 2)
         self.assertNotIn("await import(", full)
         self.assertEqual(full.count('data-mdview-mermaid-runtime="12.1.0"'), 1)
         self.assertIn("securityLevel:'strict'", full)
@@ -122,7 +124,7 @@ class MdviewTests(unittest.TestCase):
         self.assertIn("&lt;/script&gt;&lt;script&gt;alert(1)&lt;/script&gt;", html)
         self.assertIn("</figure>", html)
         full = (self.root / "out.html").read_text()
-        self.assertEqual(full.count("</script>"), 3)
+        self.assertEqual(full.count("</script>"), 5)
         self.assertNotIn("<script>alert(1)", full)
 
     def test_mermaid_in_nested_blocks(self):
@@ -132,15 +134,81 @@ class MdviewTests(unittest.TestCase):
         self.assertEqual((self.root / "out.html").read_text().count('data-mdview-mermaid-runtime="12.1.0"'), 1)
 
     def test_module_assets_are_conditional(self):
-        for source in ("# Plain Markdown", "```c\nputs(\"hello\");\n```",
-                       "```mermaid-extra\nA --> B\n```",
+        for source in ("", "# Plain Markdown", "Use `inline code`.",
+                       "> No blocks\n\n- just a list", "<pre><code>raw HTML</code></pre>"):
+            with self.subTest(source=source):
+                self.render(source)
+                full = (self.root / "out.html").read_text()
+                self.assertNotIn("<script", full)
+                self.assertNotIn(".md-code-block{", full)
+                self.assertNotIn(".hljs-keyword", full)
+                self.assertNotIn(".md-diagram{", full)
+        for source in ("```c\nputs(\"hello\");\n```", "```mermaid-extra\nA --> B\n```",
                        "```mermaid.js\nA --> B\n```",
                        "````text\n```mermaid\nA --> B\n```\n````"):
             self.render(source)
             full = (self.root / "out.html").read_text()
-            self.assertNotIn("<script", full)
+            self.assertIn('data-mdview-highlight-runtime="11.12.0"', full)
+            self.assertNotIn("data-mdview-mermaid-runtime", full)
             self.assertNotIn("cdn.jsdelivr.net", full)
             self.assertNotIn(".md-diagram{", full)
+
+    def test_code_assets_and_controls(self):
+        html = self.render("```js\nconst value = '<tag> & ü';\n```\n\n"
+                           "~~~unknown\nraw\n~~~\n\n    indented\n\n```\n```")
+        self.assertEqual(html.count('<div class="md-code-block">'), 4)
+        self.assertEqual(html.count('class="code-copy" aria-label="Copy code"'), 4)
+        self.assertEqual(html.count('class="code-toolbar" hidden'), 4)
+        self.assertEqual(html.count('role="status" aria-live="polite"'), 4)
+        self.assertEqual(html.count('title="Copy code" data-state="idle"'), 4)
+        self.assertEqual(html.count('class="code-icon code-icon-copy"'), 4)
+        self.assertEqual(html.count('class="code-icon code-icon-success"'), 4)
+        self.assertEqual(html.count('class="code-icon code-icon-error"'), 4)
+        self.assertNotIn('>Copy</button>', html)
+        self.assertIn("const value = &#39;&lt;tag&gt; &amp; ü&#39;;\n", html)
+        self.assertIn('<pre><code></code></pre>', html)
+        full = (self.root / "out.html").read_text()
+        self.assertEqual(full.count('data-mdview-highlight-runtime="11.12.0"'), 1)
+        self.assertEqual(full.count('<script type="module">'), 1)
+        self.assertEqual(full.count('.md-code-block{'), 2)  # screen and print styles
+        self.assertNotIn('<script src=', full)
+        self.assertNotIn('<link rel="stylesheet"', full)
+        runtime = full.split('<script data-mdview-highlight-runtime="11.12.0">\n', 1)[1].split('*/\n', 1)[1].split('\n</script>', 1)[0]
+        vendor = Path(__file__).resolve().parents[1] / "vendor/highlight"
+        asset = (vendor / "highlight.min.js").read_bytes()
+        manifest = json.loads((vendor / "manifest.json").read_text())
+        self.assertEqual(runtime.encode(), asset)
+        self.assertEqual(hashlib.sha256(asset).hexdigest(), manifest["asset_sha256"])
+        upstream = asset.replace(b'/\\x3c!--/', b'/<!--/').replace(b'/\\x3cscript', b'/<script')
+        self.assertEqual(hashlib.sha256(upstream).hexdigest(), manifest["source_sha256"])
+        # Avoid HTML's script double-escaped state when embedding regex literals.
+        self.assertNotIn('<!--', runtime)
+        self.assertNotIn('<script', runtime.lower())
+        self.assertNotIn('</script', runtime.lower())
+
+    def test_indented_code_activates_assets(self):
+        self.render("    line one\n\n    line two\n")
+        full = (self.root / "out.html").read_text()
+        self.assertEqual(full.count('data-mdview-highlight-runtime="11.12.0"'), 1)
+        self.assertEqual(full.count('class="code-copy"'), 1)
+
+    def test_nested_and_mermaid_code_controls(self):
+        html = self.render("> ```python\n> print(1)\n> ```\n\n"
+                           "- example\n\n  ```js\n  const a = 2;\n  ```\n\n"
+                           "```mermaid\nflowchart LR\nA --> B\n```\n")
+        self.assertEqual(html.count('class="code-copy"'), 3)
+        self.assertIn('<details open><summary>Diagram source</summary>\n<div class="md-code-block">', html)
+        full = (self.root / "out.html").read_text()
+        self.assertEqual(full.count('data-mdview-highlight-runtime="11.12.0"'), 1)
+        self.assertEqual(full.count('data-mdview-mermaid-runtime="12.1.0"'), 1)
+
+    def test_code_escaping_and_unclosed_fences(self):
+        html = self.render('```html\n</code></pre></script><script>alert("x")</script>\n& ü\n')
+        self.assertIn('&lt;/code&gt;&lt;/pre&gt;&lt;/script&gt;&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt;\n&amp; ü\n', html)
+        self.assertEqual(html.count('class="code-copy"'), 1)
+        self.assertNotIn('<script>', html)
+        full = (self.root / "out.html").read_text()
+        self.assertEqual(full.count('</script>'), 2)
 
     def test_links_images_and_autolinks(self):
         html = self.render('[**link**](https://example.com/a_(b) "title") '
@@ -231,7 +299,7 @@ class MdviewTests(unittest.TestCase):
         self.assertEqual(self.run_cmd("--help").returncode, 0)
         version = self.run_cmd("--version")
         self.assertEqual(version.returncode, 0)
-        self.assertEqual(version.stdout.strip(), "mdview 0.0.3")
+        self.assertEqual(version.stdout.strip(), "mdview 0.0.4")
         path = self.root / "nul.md"
         path.write_bytes(b"a\0b")
         self.assertIn("NUL", self.run_cmd("--no-open", path).stderr)

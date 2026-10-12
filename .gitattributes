@@ -1,0 +1,4 @@
+# Keep the feature showcase in the repository, outside source distributions.
+/example.md export-ignore whitespace=-blank-at-eol
+/examples export-ignore
+/examples/** export-ignore

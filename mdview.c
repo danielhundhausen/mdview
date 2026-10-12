@@ -520,19 +520,28 @@ static void blocks(Buf *out, Lines l, unsigned depth) {
 }
 
 static const char style[] =
-    ":root{color-scheme:light dark;--bg:#fff;--fg:#24292f;--muted:#57606a;--line:#d0d7de;--code:#f6f8fa;--link:#0969da}"
-    "@media(prefers-color-scheme:dark){:root{--bg:#0d1117;--fg:#e6edf3;--muted:#9da7b3;--line:#30363d;--code:#161b22;--link:#58a6ff}}"
-    "*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.65 -apple-system,BlinkMacSystemFont,Segoe UI,sans-serif}"
-    "main{max-width:860px;margin:auto;padding:48px 28px 80px;overflow-wrap:break-word}"
-    "h1,h2,h3,h4,h5,h6{line-height:1.25;margin:1.5em 0 .6em}h1{font-size:2.2em}h2{font-size:1.6em}h1,h2{padding-bottom:.3em;border-bottom:1px solid var(--line)}"
-    "a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}p,ul,ol,pre,blockquote{margin:0 0 1em}"
-    "li>p{margin:.3em 0}li>ul,li>ol{margin-bottom:.3em}code{font: .88em/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;background:var(--code);padding:.15em .35em;border-radius:4px}"
-    "pre{background:var(--code);padding:18px;border-radius:8px;overflow:auto}pre code{padding:0;background:none}"
-    "blockquote{margin-left:0;padding:0 1em;border-left:4px solid var(--line);color:var(--muted)}blockquote>:last-child{margin-bottom:0}"
-    "img{max-width:100%;height:auto}hr{border:0;border-top:1px solid var(--line);margin:2em 0}"
-    ".table-wrap{overflow:auto;margin-bottom:1em}table{border-collapse:collapse}th,td{border:1px solid var(--line);padding:8px 14px}th{background:var(--code)}"
-    ".task{list-style:none}.task input{margin-right:.4em}"
-    "@media(max-width:600px){main{padding:24px 18px;font-size:16px}}@media print{main{max-width:none;padding:0}:root{--bg:#fff;--fg:#000;--code:#f3f3f3;--line:#bbb;--link:#000}}";
+    "/* Embedded reading styles; no external assets required. */\n"
+    ":root{color-scheme:light dark;--canvas:#f2efe9;--paper:#fffdf9;--fg:#343630;--muted:#6f7369;--line:#e5dfd4;--surface:#f4f0e8;--accent:#a44832;--code-bg:#292f2b;--code-fg:#edf0e8}\n"
+    "@media(prefers-color-scheme:dark){:root{--canvas:#171b19;--paper:#202522;--fg:#e9e7df;--muted:#b2b7ac;--line:#3c433c;--surface:#2a302b;--accent:#e9ac8e;--code-bg:#151a17;--code-fg:#edf0e8}}\n"
+    "*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}\n"
+    "body{margin:0;background:var(--canvas);color:var(--fg);font:1.0625rem/1.8 -apple-system,BlinkMacSystemFont,\"Segoe UI\",Helvetica,Arial,sans-serif}\n"
+    "::selection{background:var(--accent);color:var(--paper)}\n"
+    "main{width:calc(100% - 3rem);max-width:54rem;margin:3rem auto;padding:3.5rem clamp(1.5rem,6vw,4.5rem) 4.5rem;background:var(--paper);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 48px #00000008;overflow-wrap:break-word}\n"
+    "main>:first-child{margin-top:0}main>:last-child{margin-bottom:0}\n"
+    "h1,h2{font-family:Georgia,\"Times New Roman\",serif;font-weight:400;line-height:1.15;letter-spacing:-.035em;text-wrap:balance}\n"
+    "h1{font-size:2.8em;margin:0 0 .8em}main>h1:first-child::after{content:\"\";display:block;width:2.5rem;height:3px;background:var(--accent);margin:1.5rem 0 0}\n"
+    "h2{font-size:1.9em;margin:1.7em 0 .65em}h3,h4,h5,h6{font-weight:650;line-height:1.4;margin:1.8em 0 .65em}h3{font-size:1.2em}h4{font-size:1.05em}h5{font-size:1em}h6{font-size:.9em;color:var(--muted)}\n"
+    "p,ul,ol,pre,.table-wrap{margin:0 0 1.3em}main>h1:first-child+p{font-size:1.1em;line-height:1.7;color:var(--muted)}\n"
+    "a{color:var(--accent);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:.2em}a:hover{text-decoration-thickness:2px}a:focus-visible{outline:2px solid var(--accent);outline-offset:4px;border-radius:2px}\n"
+    "strong{font-weight:650}del{color:var(--muted)}ul,ol{padding-left:1.5em}li{padding-left:.3em;margin:.35em 0}li::marker{color:var(--accent)}li>p{margin:.25em 0}li>ul,li>ol{margin:.4em 0}\n"
+    "code{font:.85em/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:.15em .35em;overflow-wrap:anywhere}\n"
+    "pre{background:var(--code-bg);color:var(--code-fg);border-radius:8px;padding:1.25rem 1.5rem;overflow-x:auto;tab-size:4;line-height:1.65}pre code{background:none;color:inherit;border:0;padding:0;overflow-wrap:normal;white-space:pre}\n"
+    "blockquote{margin:1.8em 0;padding:1rem 1.4rem;border-left:2px solid var(--accent);border-radius:0 6px 6px 0;background:var(--surface);font:1.12em/1.7 Georgia,\"Times New Roman\",serif}blockquote>:first-child{margin-top:0}blockquote>:last-child{margin-bottom:0}\n"
+    "img{max-width:100%;height:auto;vertical-align:middle;border-radius:6px}hr{border:0;border-top:1px solid var(--line);margin:2.5rem 0}\n"
+    ".table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:6px}table{width:100%;border-collapse:collapse;font-size:.92em}th,td{border-bottom:1px solid var(--line);padding:.75em 1em;text-align:left;vertical-align:top}th{font-weight:650;background:var(--surface)}tbody tr:last-child td{border-bottom:0}\n"
+    ".task{list-style:none;position:relative}.task>input{position:absolute;left:-1.3em;top:.5em;width:1em;height:1em;margin:0;accent-color:var(--accent)}\n"
+    "@media(max-width:600px){body{font-size:1rem;background:var(--paper)}main{width:100%;margin:0;padding:2rem 1.5rem 3rem;border:0;border-radius:0;box-shadow:none}h1{font-size:2.3em}pre{padding:1rem}}\n"
+    "@media print{:root{color-scheme:light;--paper:#fff;--fg:#000;--muted:#444;--line:#ccc;--surface:#f5f5f5;--accent:#000;--code-bg:#f5f5f5;--code-fg:#000}body{background:#fff;font-size:11pt}main{width:100%;max-width:none;margin:0;padding:0;border:0;box-shadow:none}h1,h2,h3,h4,h5,h6{break-after:avoid}p,li{orphans:3;widows:3}pre,blockquote,tr,img{break-inside:avoid}pre,pre code{white-space:pre-wrap;overflow-wrap:anywhere}.table-wrap,pre{overflow:visible}thead{display:table-header-group}}\n";
 
 static void file_url(Buf *b, const char *path) {
     static const char hex[] = "0123456789ABCDEF";
@@ -597,7 +606,7 @@ int main(int argc, char **argv) {
         const char *arg = argv[i];
         if (options && !strcmp(arg, "--")) { options = 0; continue; }
         if (options && (!strcmp(arg, "--help") || !strcmp(arg, "-h"))) { usage(stdout); return 0; }
-        if (options && !strcmp(arg, "--version")) { puts("mdview 0.0.1"); return 0; }
+        if (options && !strcmp(arg, "--version")) { puts("mdview 0.0.2"); return 0; }
         if (options && !strcmp(arg, "--no-open")) { launch = 0; continue; }
         if (options && (!strcmp(arg, "--output") || !strcmp(arg, "-o"))) {
             if (++i == argc) die("--output requires a filename");

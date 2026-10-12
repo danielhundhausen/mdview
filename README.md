@@ -56,7 +56,8 @@ editing the Markdown.
 Relative images and links resolve against the source file's directory, even
 when the HTML is in a temporary directory. For standard input, they resolve
 against the current working directory. The generated page includes its own
-CSS with light/dark themes, responsive layout, and print styles. It uses no
+CSS with a warm paper layout, serif headings, system fonts, light/dark themes,
+accessible link focus indicators, responsive layout, and print styles. It uses no
 JavaScript, web fonts, or remote stylesheets. Remote images can still be loaded
 if the document references them.
 

@@ -122,7 +122,7 @@ class MdviewTests(unittest.TestCase):
         self.assertIn("&lt;/script&gt;&lt;script&gt;alert(1)&lt;/script&gt;", html)
         self.assertIn("</figure>", html)
         full = (self.root / "out.html").read_text()
-        self.assertEqual(full.count("</script>"), 2)
+        self.assertEqual(full.count("</script>"), 3)
         self.assertNotIn("<script>alert(1)", full)
 
     def test_mermaid_in_nested_blocks(self):
@@ -231,7 +231,7 @@ class MdviewTests(unittest.TestCase):
         self.assertEqual(self.run_cmd("--help").returncode, 0)
         version = self.run_cmd("--version")
         self.assertEqual(version.returncode, 0)
-        self.assertEqual(version.stdout.strip(), "mdview 0.0.2")
+        self.assertEqual(version.stdout.strip(), "mdview 0.0.3")
         path = self.root / "nul.md"
         path.write_bytes(b"a\0b")
         self.assertIn("NUL", self.run_cmd("--no-open", path).stderr)

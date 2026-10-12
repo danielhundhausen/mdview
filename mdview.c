@@ -613,7 +613,7 @@ int main(int argc, char **argv) {
         const char *arg = argv[i];
         if (options && !strcmp(arg, "--")) { options = 0; continue; }
         if (options && (!strcmp(arg, "--help") || !strcmp(arg, "-h"))) { usage(stdout); return 0; }
-        if (options && !strcmp(arg, "--version")) { puts("mdview 0.0.2"); return 0; }
+        if (options && !strcmp(arg, "--version")) { puts("mdview 0.0.3"); return 0; }
         if (options && !strcmp(arg, "--no-open")) { launch = 0; continue; }
         if (options && (!strcmp(arg, "--output") || !strcmp(arg, "-o"))) {
             if (++i == argc) die("--output requires a filename");

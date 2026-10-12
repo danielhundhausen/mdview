@@ -75,8 +75,10 @@ flowchart LR
 ````
 
 Diagrams use the document's colors and system font, adapt when the light/dark
-theme changes, and scroll horizontally when wider than the reading column.
-The original diagram source is available in a disclosure below each diagram.
+theme changes, and scale down to fit the reading column. Use **Expand** to open
+a diagram in a full-screen overlay, with zoom controls, **Fit width**, and a
+100% view. Close with the button, Escape, or a click on the backdrop. The original
+diagram source is available in a disclosure below each diagram.
 
 The executable contains **Mermaid 12.1.0**, compressed with DEFLATE. A small
 vendored C decompressor expands the library into the generated HTML only when
@@ -143,8 +145,10 @@ library integration; it does not replace a browser-specific layout test.
 
 Fenced-code extensions live outside the Markdown parser. `render_modules.h`
 defines the module interface, `render_modules.c` registers modules and tracks
-which are used by a document, and `mermaid_module.c` owns Mermaid's markup,
-styles, and browser adapter. To add another renderer, implement a `RenderModule`,
+which are used by a document, and `mermaid_module.c` owns Mermaid's markup and
+runtime. `mermaid_styles.css`, `mermaid_adapter.js`, and `diagram_viewer.js` own
+the diagram styles, rendering adapter, and modal viewer. These assets are
+embedded by the C build helper. To add another renderer, implement a `RenderModule`,
 register it, and add its C source to `SOURCES` in the Makefile. Module assets are
 included once, only in documents that use the corresponding fence language.
 The optional `emit_runtime` callback supports compressed runtime assets. The

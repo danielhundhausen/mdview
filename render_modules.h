@@ -11,7 +11,7 @@ typedef struct {
     const char *before_code;
     const char *after_code;
     const char *styles;
-    const char *script;
+    const char *script; /* JavaScript; the registry emits a module script wrapper. */
     int (*emit_runtime)(RenderEmit emit, void *context);
 } RenderModule;
 

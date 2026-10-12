@@ -28,7 +28,9 @@ int render_modules_scripts(const RenderModules *state, RenderEmit emit, void *co
     for (size_t i = 0; i < MODULE_COUNT; ++i) {
         if (!(state->used & (1u << i))) continue;
         if (registry[i]->emit_runtime && !registry[i]->emit_runtime(emit, context)) return 0;
+        emit(context, "<script type=\"module\">\n");
         emit(context, registry[i]->script);
+        emit(context, "\n</script>\n");
     }
     return 1;
 }

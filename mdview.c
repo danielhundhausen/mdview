@@ -11,6 +11,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include "render_modules.h"
+#include "watch.h"
+#include ".build/watch_adapter.h"
 
 /* A deliberately small, dependency-free Markdown renderer. Raw HTML is escaped. */
 typedef struct { char *s; size_t n, cap; } Buf;
@@ -609,32 +611,18 @@ static int open_browser(const char *path) {
 }
 
 static void usage(FILE *out) {
-    fputs("Usage: mdview [--no-open] [-o FILE] INPUT.md\n"
+    fputs("Usage: mdview [--watch] [--no-open] [-o FILE] INPUT.md\n"
           "\nRender Markdown to HTML and open it in your default browser.\n"
           "  -o, --output FILE  Save HTML to FILE instead of a temporary file\n"
-          "      --no-open      Render and print the HTML path without opening it\n"
+          "      --no-open      Render without opening a browser\n"
+          "      --watch        Keep a live local preview open until Ctrl+C\n"
           "  -h, --help         Show this help\n"
           "      --version      Show version\n"
           "Use - for standard input, or -- before a filename beginning with -.\n", out);
 }
 
-int main(int argc, char **argv) {
-    const char *input = NULL, *output = NULL; int launch = 1, options = 1;
-    for (int i = 1; i < argc; ++i) {
-        const char *arg = argv[i];
-        if (options && !strcmp(arg, "--")) { options = 0; continue; }
-        if (options && (!strcmp(arg, "--help") || !strcmp(arg, "-h"))) { usage(stdout); return 0; }
-        if (options && !strcmp(arg, "--version")) { puts("mdview 0.0.4"); return 0; }
-        if (options && !strcmp(arg, "--no-open")) { launch = 0; continue; }
-        if (options && (!strcmp(arg, "--output") || !strcmp(arg, "-o"))) {
-            if (++i == argc) die("--output requires a filename");
-            output = argv[i]; continue;
-        }
-        if (options && arg[0] == '-' && arg[1]) { fprintf(stderr, "mdview: unknown option: %s\n", arg); usage(stderr); return 1; }
-        if (input) die("expected one input file");
-        input = arg;
-    }
-    if (!input) { usage(stderr); return 1; }
+static char *render_file(const char *input, const char *output, int watch,
+                         unsigned long revision) {
     if (output && strcmp(input, "-")) {
         struct stat in_stat, out_stat;
         if (!stat(input, &in_stat) && !stat(output, &out_stat) &&
@@ -665,11 +653,20 @@ int main(int argc, char **argv) {
     Buf url = {0}; file_url(&url, base); escape(&html, url.s, url.n); free(url.s); free(base);
     append(&html, "\">\n<style>"); append(&html, style);
     render_modules_styles(&modules, emit, &html);
-    append(&html, "</style>\n</head>\n<body>\n<main>\n");
+    append(&html, "</style>\n");
+    if (watch) {
+        char metadata[128];
+        snprintf(metadata, sizeof(metadata), "<meta name=\"mdview-revision\" content=\"%lu\">\n", revision);
+        append(&html, metadata);
+        append(&html, "<script data-mdview-watch>\n");
+        append(&html, (const char *)watch_adapter);
+        append(&html, "\n</script>\n");
+    }
+    append(&html, "</head>\n<body>\n<main>\n");
     if (rendered.n) append_n(&html, rendered.s, rendered.n);
     free(rendered.s);
     append(&html, "</main>\n");
-    if (!render_modules_scripts(&modules, emit, &html)) { free(html.s); return 1; }
+    if (!render_modules_scripts(&modules, emit, &html)) { free(html.s); return NULL; }
     append(&html, "</body>\n</html>\n");
     FILE *f; char *temporary = NULL;
     if (output) f = fopen(output, "wb");
@@ -685,18 +682,52 @@ int main(int argc, char **argv) {
         }
         output = temporary;
     }
-    if (!f) { fprintf(stderr, "mdview: cannot write %s: %s\n", output, strerror(errno)); free(temporary); free(html.s); return 1; }
+    if (!f) { fprintf(stderr, "mdview: cannot write %s: %s\n", output, strerror(errno)); free(temporary); free(html.s); return NULL; }
     int failed = fwrite(html.s, 1, html.n, f) != html.n;
     if (fclose(f)) failed = 1;
     free(html.s);
     if (failed) {
         fprintf(stderr, "mdview: error writing %s\n", output);
         if (temporary) unlink(temporary);
-        free(temporary); return 1;
+        free(temporary); return NULL;
     }
     char *absolute = realpath(output, NULL);
     if (!absolute) { free(temporary); die("cannot resolve output path"); }
+    free(temporary); return absolute;
+}
+
+static char *render_update(const char *input, const char *output, unsigned long revision) {
+    return render_file(input, output, 1, revision);
+}
+
+int main(int argc, char **argv) {
+    const char *input = NULL, *output = NULL; int launch = 1, options = 1, watch = 0;
+    for (int i = 1; i < argc; ++i) {
+        const char *arg = argv[i];
+        if (options && !strcmp(arg, "--")) { options = 0; continue; }
+        if (options && (!strcmp(arg, "--help") || !strcmp(arg, "-h"))) { usage(stdout); return 0; }
+        if (options && !strcmp(arg, "--version")) { puts("mdview 0.0.5"); return 0; }
+        if (options && !strcmp(arg, "--no-open")) { launch = 0; continue; }
+        if (options && !strcmp(arg, "--watch")) { watch = 1; continue; }
+        if (options && (!strcmp(arg, "--output") || !strcmp(arg, "-o"))) {
+            if (++i == argc) die("--output requires a filename");
+            output = argv[i]; continue;
+        }
+        if (options && arg[0] == '-' && arg[1]) { fprintf(stderr, "mdview: unknown option: %s\n", arg); usage(stderr); return 1; }
+        if (input) die("expected one input file");
+        input = arg;
+    }
+    if (!input) { usage(stderr); return 1; }
+    if (watch && !strcmp(input, "-")) die("--watch requires a Markdown file, not standard input");
+    if (watch) {
+        struct stat st;
+        if (stat(input, &st) || !S_ISREG(st.st_mode)) die("--watch requires a regular Markdown file");
+    }
+    if (watch) return watch_preview(input, output, launch ? open_browser : NULL, render_update);
+    char *absolute = render_file(input, output, 0, 1);
+    if (!absolute) return 1;
+    int status;
     puts(absolute); fflush(stdout);
-    int status = launch ? open_browser(absolute) : 0;
-    free(absolute); free(temporary); return status;
+    status = launch ? open_browser(absolute) : 0;
+    free(absolute); return status;
 }

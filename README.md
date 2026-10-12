@@ -44,6 +44,8 @@ mdview notes.md                      # Render and open in your browser
 mdview --no-open notes.md            # Render and print the temporary HTML path
 mdview -o notes.html notes.md        # Save to a chosen file and open it
 mdview --no-open -o notes.html notes.md
+mdview --watch notes.md              # Refresh the open preview as you edit
+mdview --watch --no-open notes.md    # Print the live preview URL without opening it
 cat notes.md | mdview -              # Read standard input
 mdview -- --strange-filename.md      # Filenames beginning with a dash
 mdview --help
@@ -54,15 +56,31 @@ extension, unique names, and owner-only permissions. They go into `TMPDIR`,
 or `/tmp` when it is unset. They remain after the command exits so the browser
 can read and reload them; delete them when you no longer need them. Explicit
 output files are overwritten, except that overwriting the source is rejected.
-Rendering is a snapshot: rerun the command after
-editing the Markdown.
+Use `--watch` for a live preview, or rerun the command to update a snapshot.
+
+With `--watch`, mdview stays running and prints an HTTP preview URL instead of
+the HTML path. It opens that URL once and watches the Markdown contents for
+changes, including when an editor replaces the file on save. The page refreshes
+automatically and restores its horizontal and vertical scroll position, including
+after images and diagrams finish rendering. Browser JavaScript must be enabled.
+The server listens only on `127.0.0.1`, on an automatically chosen port. Local
+images and links within the Markdown file's directory (and its subdirectories)
+are served by the preview server; paths outside that directory are not served.
+No external service or additional runtime is required.
+
+Stop watching with **Ctrl+C**. The saved HTML remains available at the path
+printed on stderr; `-o FILE` selects that file as usual. It can still be opened
+directly after watching ends. `--no-open` starts the same live preview without
+launching a browser. Watch mode requires a regular file and rejects standard
+input. Failed renders or a temporarily missing source keep the last successful
+preview available; valid edits resume updates.
 
 Relative images and links resolve against the source file's directory, even
 when the HTML is in a temporary directory. For standard input, they resolve
 against the current working directory. The generated page includes its own
 CSS with a warm paper layout, serif headings, system fonts, light/dark themes,
 accessible link focus indicators, responsive layout, and print styles. Pages
-without code blocks use no JavaScript, web fonts, or remote stylesheets. Code
+without code blocks or `--watch` use no JavaScript, web fonts, or remote stylesheets. Code
 blocks and Mermaid diagrams include their browser assets as described below.
 Remote images can still be loaded if the document references them.
 
@@ -161,6 +179,10 @@ It executes the actual bundled highlighter and code adapter with DOM/clipboard
 stubs to verify languages and aliases, copied text, missing-runtime fallback,
 clipboard failures, retries, and focus/selection restoration. Neither suite
 opens a browser or downloads dependencies.
+The Python suite also verifies live HTTP previews, content changes and atomic
+saves, recovery from invalid or missing input, local assets, and clean shutdown.
+The JavaScript suite verifies refresh polling and scroll restoration through
+delayed layout changes and user interaction.
 
 For a real-library integration test without browser control, install `jsdom`
 and `svgdom` into a temporary directory and run:

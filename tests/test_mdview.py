@@ -10,6 +10,13 @@ import tempfile
 import unittest
 import hashlib
 import json
+import time
+import signal
+import select
+from contextlib import contextmanager
+from urllib.request import urlopen, Request
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote, urlsplit
 from html.parser import HTMLParser
 
 PROGRAM = str(Path(sys.argv.pop(1)).resolve())
@@ -53,6 +60,165 @@ class MdviewTests(unittest.TestCase):
         parser.feed(html)
         self.assertEqual(parser.stack, [])
         return html.split("<main>\n", 1)[1].split("</main>", 1)[0]
+
+    @contextmanager
+    def watching(self, source, *args, env=None):
+        log = self.root / "watch.log"
+        with log.open("w") as errors:
+            process = subprocess.Popen([PROGRAM, "--watch", *map(str, args), str(source)],
+                                       stdout=subprocess.PIPE, stderr=errors, text=True,
+                                       cwd=self.root, env=env)
+            try:
+                ready, _, _ = select.select([process.stdout], [], [], 5)
+                self.assertTrue(ready, "watch did not print its preview URL")
+                url = process.stdout.readline().strip()
+                self.assertTrue(url.startswith("http://127.0.0.1:"), log.read_text())
+                yield process, url
+            finally:
+                if process.poll() is None:
+                    process.send_signal(signal.SIGINT)
+                try:
+                    process.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.communicate()
+                    self.fail("watch did not stop on SIGINT")
+            self.assertEqual(process.returncode, 0, log.read_text())
+
+    def fetch(self, url):
+        with urlopen(url, timeout=2) as response:
+            return response.read().decode("utf-8")
+
+    def await_preview(self, url, text):
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            html = self.fetch(url)
+            if text in html:
+                return html
+            time.sleep(.05)
+        self.fail(f"preview did not update to {text!r}")
+
+    def test_watch_updates_and_atomic_saves(self):
+        source = self.root / "live.md"
+        source.write_text("# First")
+        output = self.root / "live.html"
+        with self.watching(source, "--no-open", "-o", output) as (process, url):
+            html = self.fetch(url)
+            self.assertIn("<h1>First</h1>", html)
+            self.assertIn("data-mdview-watch", html)
+            origin = url.rsplit("/", 1)[0]
+            revision = int(self.fetch(origin + "/revision"))
+            # Same length and timestamps: watch must detect the actual edit.
+            original_stat = source.stat()
+            source.write_text("# Other")
+            os.utime(source, ns=(original_stat.st_atime_ns, original_stat.st_mtime_ns))
+            self.await_preview(url, "<h1>Other</h1>")
+            self.assertGreater(int(self.fetch(origin + "/revision")), revision)
+            replacement = self.root / "save.md"
+            replacement.write_text("# Atomic save\n\n```js\nconst n = 1;\n```")
+            replacement.replace(source)
+            html = self.await_preview(url, "<h1>Atomic save</h1>")
+            self.assertIn('data-mdview-highlight-runtime="11.12.0"', html)
+            self.assertEqual(output.read_text(), html)
+            self.assertIsNone(process.poll())
+            self.assertEqual(list(self.root.glob("*.watch-*")), [])
+        with self.assertRaises((URLError, ConnectionError)):
+            self.fetch(url)
+
+    def test_watch_keeps_last_preview_and_recovers(self):
+        source = self.root / "live.md"
+        source.write_text("# Good")
+        with self.watching(source, "--no-open") as (process, url):
+            initial = self.fetch(url)
+            source.write_bytes(b"bad\0text")
+            time.sleep(.9)
+            self.assertEqual(self.fetch(url), initial)
+            self.assertIsNone(process.poll())
+            source.write_text("> " * 70 + "deep")
+            time.sleep(.9)
+            self.assertEqual(self.fetch(url), initial)
+            source.unlink()
+            time.sleep(.4)
+            self.assertEqual(self.fetch(url), initial)
+            source.write_text("# Recovered")
+            self.await_preview(url, "<h1>Recovered</h1>")
+            self.assertIsNone(process.poll())
+        self.assertIn("keeping the last preview", (self.root / "watch.log").read_text())
+
+    def test_watch_temporary_output(self):
+        source = self.root / "live.md"
+        source.write_text("# Live")
+        env = dict(os.environ, TMPDIR=str(self.root))
+        with self.watching(source, "--no-open", env=env) as (_, url):
+            outputs = list(self.root.glob("mdview-*.html"))
+            self.assertEqual(len(outputs), 1)
+            output = outputs[0]
+            self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o600)
+            source.write_text("# Updated")
+            self.await_preview(url, "<h1>Updated</h1>")
+            self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o600)
+        self.assertTrue(output.exists())
+        self.assertIn("<h1>Updated</h1>", output.read_text())
+
+    def test_watch_serves_local_assets_and_limits_access(self):
+        directory = self.root / "space # & ü"
+        directory.mkdir()
+        source = directory / "notes.md"
+        source.write_text("![Image](image%20%23%20%C3%BC.svg)\n\n[More](more.md)")
+        asset = directory / "image # ü.svg"
+        asset.write_text('<svg xmlns="http://www.w3.org/2000/svg"/>')
+        (directory / "more.md").write_text("More notes")
+        outside = self.root / "private.txt"
+        outside.write_text("Not served")
+        (directory / "outside.txt").symlink_to(outside)
+        output = self.root / "out.html"
+        output.write_text("Old")
+        output.chmod(0o640)
+        with self.watching(source, "--no-open", "-o", output) as (_, url):
+            origin = url.rsplit("/", 1)[0]
+            asset_url = origin + "/files" + quote(str(asset))
+            with urlopen(asset_url, timeout=2) as response:
+                self.assertEqual(response.headers.get_content_type(), "image/svg+xml")
+                self.assertEqual(response.read().decode(), asset.read_text())
+                self.assertEqual(response.headers["Cache-Control"], "no-store")
+            self.assertEqual(self.fetch(origin + "/files" + quote(str(directory / "more.md"))), "More notes")
+            for path in (outside, directory / "outside.txt", directory / ".." / "private.txt"):
+                with self.assertRaises(HTTPError) as error:
+                    self.fetch(origin + "/files" + quote(str(path)))
+                self.assertEqual(error.exception.code, 404)
+            with self.assertRaises(HTTPError) as error:
+                urlopen(Request(url, headers={"Host": "untrusted.example"}), timeout=2)
+            self.assertEqual(error.exception.code, 403)
+            with urlopen(Request(url, method="HEAD"), timeout=2) as response:
+                self.assertEqual(response.read(), b"")
+                self.assertEqual(int(response.headers["Content-Length"]), output.stat().st_size)
+            source.write_text("# Updated")
+            self.await_preview(url, "<h1>Updated</h1>")
+            self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o640)
+
+    def test_watch_launches_browser_only_once(self):
+        launcher = self.root / ("open" if sys.platform == "darwin" else "xdg-open")
+        launcher.write_text('#!/bin/sh\nprintf "%s\\n" "$#" "$1" >> "$LAUNCH_RECORD"\n')
+        launcher.chmod(0o755)
+        record = self.root / "record"
+        env = dict(os.environ, PATH=str(self.root), TMPDIR=str(self.root), LAUNCH_RECORD=str(record))
+        source = self.root / "live.md"
+        source.write_text("# First")
+        with self.watching(source, env=env) as (_, url):
+            source.write_text("# Second")
+            self.await_preview(url, "<h1>Second</h1>")
+            self.assertEqual(record.read_text().splitlines(), ["1", url])
+
+    def test_watch_rejects_stdin_and_input_overwrite(self):
+        result = self.run_cmd("--watch", "--no-open", "-", stdin="# Test")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("standard input", result.stderr)
+        source = self.root / "live.md"
+        source.write_text("# Source")
+        result = self.run_cmd("--watch", "--no-open", "-o", source, source)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(source.read_text(), "# Source")
+        self.assertNotEqual(self.run_cmd("--watch", "--no-open", self.root).returncode, 0)
 
     def test_headings_and_paragraphs(self):
         html = self.render("# Title\n\nHello\nworld\n\nSecond\n------\n\n### Third ###\n\n---\n")
@@ -299,7 +465,7 @@ class MdviewTests(unittest.TestCase):
         self.assertEqual(self.run_cmd("--help").returncode, 0)
         version = self.run_cmd("--version")
         self.assertEqual(version.returncode, 0)
-        self.assertEqual(version.stdout.strip(), "mdview 0.0.4")
+        self.assertEqual(version.stdout.strip(), "mdview 0.0.5")
         path = self.root / "nul.md"
         path.write_bytes(b"a\0b")
         self.assertIn("NUL", self.run_cmd("--no-open", path).stderr)

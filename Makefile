@@ -5,12 +5,12 @@ PREFIX ?= /usr/local
 .PHONY: all clean test test-js install uninstall
 all: mdview
 
-SOURCES = mdview.c render_modules.c mermaid_module.c code_module.c vendor/miniz/miniz_tinfl.c
+SOURCES = mdview.c watch.c render_modules.c mermaid_module.c code_module.c vendor/miniz/miniz_tinfl.c
 MINIZ_HEADERS = $(wildcard vendor/miniz/*.h)
 MINIZ_FLAGS = -DMINIZ_NO_ZLIB_APIS -DMINIZ_NO_ARCHIVE_APIS -DMINIZ_NO_DEFLATE_APIS
-ASSET_HEADERS = mermaid_asset.h .build/miniz_license.h .build/mermaid_styles.h .build/mermaid_adapter.h .build/diagram_viewer.h .build/code_styles.h .build/code_adapter.h .build/highlight_runtime.h .build/highlight_license.h
+ASSET_HEADERS = mermaid_asset.h .build/miniz_license.h .build/mermaid_styles.h .build/mermaid_adapter.h .build/diagram_viewer.h .build/code_styles.h .build/code_adapter.h .build/highlight_runtime.h .build/highlight_license.h .build/watch_adapter.h
 
-mdview: $(SOURCES) render_modules.h $(ASSET_HEADERS) vendor/mermaid/asset_info.h $(MINIZ_HEADERS)
+mdview: $(SOURCES) render_modules.h watch.h $(ASSET_HEADERS) vendor/mermaid/asset_info.h $(MINIZ_HEADERS)
 	$(CC) $(CPPFLAGS) $(MINIZ_FLAGS) $(CFLAGS) $(LDFLAGS) -o $@ $(SOURCES)
 
 .build/embed_asset: tools/embed_asset.c
@@ -44,6 +44,7 @@ test: mdview
 test-js: mdview
 	node tests/test_mermaid.mjs ./mdview
 	node tests/test_code.mjs ./mdview
+	node tests/test_watch.mjs
 
 install: mdview
 	install -d "$(DESTDIR)$(PREFIX)/bin"

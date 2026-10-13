@@ -948,7 +948,7 @@ int main(int argc, char **argv) {
         const char *arg = argv[i];
         if (options && !strcmp(arg, "--")) { options = 0; continue; }
         if (options && (!strcmp(arg, "--help") || !strcmp(arg, "-h"))) { usage(stdout); return 0; }
-        if (options && !strcmp(arg, "--version")) { puts("mdview 0.0.7"); return 0; }
+        if (options && !strcmp(arg, "--version")) { puts("mdview 0.0.8"); return 0; }
         if (options && !strcmp(arg, "--no-open")) { launch = 0; continue; }
         if (options && !strcmp(arg, "--watch")) { watch = 1; continue; }
         if (options && !strcmp(arg, "--toc")) { toc_mode = 1; continue; }

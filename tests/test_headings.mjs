@@ -33,7 +33,7 @@ function page(options = {}) {
     dataset: {headingId: id}, attributes: new Map(),
     rowRect: {left: 105 + (index === 2 ? 20 : 0), top: 80 + index * 36,
       width: 190, height: 22},
-    getBoundingClientRect() { return this.rowRect; },
+    getBoundingClientRect() { return {...this.rowRect, bottom: this.rowRect.top + this.rowRect.height}; },
     setAttribute(name, value) { this.attributes.set(name, value); },
     removeAttribute(name) { this.attributes.delete(name); },
   }));
@@ -44,13 +44,14 @@ function page(options = {}) {
       remove(value) { this.values.delete(value); }},
     getBoundingClientRect() { return this.bounds; },
   };
-  const toc = {open: false, addEventListener: listen,
+  const toc = {open: false, addEventListener: listen, parentElement: options.sidebar ?? null,
     querySelector(selector) { assert.equal(selector, 'nav'); return nav; },
     querySelectorAll(selector) { assert.equal(selector, 'a[data-heading-id]'); return links; }};
   const main = {};
   const window = {
     innerWidth: options.width ?? 1200, innerHeight: 600, scrollY: 0,
     matchMedia(query) {
+      if (query === '(prefers-reduced-motion: reduce)') return {matches: !!options.reducedMotion};
       assert.equal(query, '(max-width: 1000px)');
       return {matches: this.innerWidth <= 1000};
     },
@@ -192,6 +193,56 @@ view.event('load');
 view.flush();
 assert.equal(view.current(), 'usage');
 
+// A long outline in the sticky sidebar follows the current section, both down
+// and back up, leaving neighbouring rows in sight. Only the sidebar scrolls.
+function sidebar(options = {}) {
+  return {scrollTop: 0, clientHeight: 200, scrollHeight: options.scrollHeight ?? 600, calls: [],
+    getBoundingClientRect() { return {top: 0, bottom: 200}; },
+    scrollTo(target) { this.calls.push({...target}); this.scrollTop = target.top; }};
+}
+const long = page({sidebar: sidebar()}), side = long.toc.parentElement;
+assert.equal(long.toc.open, true);
+assert.deepEqual(side.calls, [], 'A visible first entry leaves the outline alone');
+long.window.scrollY = 990;
+long.event('scroll');
+long.flush();
+assert.equal(long.current(), 'usage');
+assert.deepEqual(side.calls, [{top: 24, behavior: 'smooth'}],
+  'A row below the comfort margin scrolls the sidebar just enough');
+long.event('scroll');
+long.flush();
+assert.equal(side.calls.length, 1, 'An unchanged section does not fight manual outline scrolling');
+// Scrolled to the bottom of a long outline, an earlier section moves back into view.
+side.scrollTop = 400;
+long.links[0].rowRect.top = -300;
+long.window.scrollY = 0;
+long.event('scroll');
+long.flush();
+assert.equal(long.current(), 'intro');
+assert.deepEqual(side.calls[1], {top: 50, behavior: 'smooth'});
+// Reopening the outline brings the current entry back; closing it never scrolls.
+long.toc.open = false;
+long.event('toggle');
+long.flush();
+assert.equal(side.calls.length, 2);
+long.toc.open = true;
+long.event('toggle');
+long.flush();
+assert.equal(side.calls.length, 3);
+// Reduced motion jumps instead of gliding.
+const still = page({sidebar: sidebar(), reducedMotion: true});
+still.window.scrollY = 2000;
+still.event('scroll');
+still.flush();
+assert.equal(still.current(), 'end');
+assert.deepEqual(still.toc.parentElement.calls, [{top: 96, behavior: 'auto'}]);
+// An outline that fits needs no scrolling at all.
+const short = page({sidebar: sidebar({scrollHeight: 200})});
+short.window.scrollY = 2000;
+short.event('scroll');
+short.flush();
+assert.deepEqual(short.toc.parentElement.calls, []);
+
 const missing = page({missing: 'installation'});
 missing.window.scrollY = 500;
 missing.event('scroll');
@@ -204,4 +255,4 @@ fallback.flush();
 assert.equal(fallback.current(), 'usage');
 assert.equal(page({empty: true}).current(), undefined);
 assert.equal(page({noToc: true}).current(), undefined);
-console.log('Heading outline: viewport defaults, current sections, moving marker geometry, and layout changes pass.');
+console.log('Heading outline: viewport defaults, current sections, moving marker geometry, outline following, and layout changes pass.');

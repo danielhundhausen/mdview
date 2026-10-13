@@ -53,7 +53,27 @@
     }
   }
 
-  let current = null, pending = false;
+  // Keep the current row inside whichever box scrolls the outline: the sticky
+  // sidebar on wide screens, the capped list itself on narrow ones. Only that
+  // box moves; scrollIntoView would also drag the page away from the reader.
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  function reveal(link) {
+    const box = [nav, toc.parentElement].find(element =>
+      element && element.scrollHeight > element.clientHeight + 1);
+    if (!box) return;
+    const row = link.getBoundingClientRect(), view = box.getBoundingClientRect();
+    // Leave a couple of neighbouring rows in sight, so the highlight never
+    // rides the very edge of the scrolled outline.
+    const pad = Math.min(64, box.clientHeight * .25);
+    let delta = 0;
+    if (row.top < view.top + pad) delta = row.top - view.top - pad;
+    else if (row.bottom > view.bottom - pad) delta = row.bottom - view.bottom + pad;
+    if (Math.abs(delta) < 1) return;
+    box.scrollTo({top: box.scrollTop + delta,
+      behavior: reducedMotion.matches ? 'auto' : 'smooth'});
+  }
+
+  let current = null, revealed = null, pending = false;
   function update() {
     pending = false;
     // Select the latest heading to pass a small reading margin near the top.
@@ -76,6 +96,13 @@
       current = next;
     }
     positionMarker();
+    // Follow only a new section or a reopened outline, so a reader browsing
+    // the list by hand is not pulled back on every scroll frame.
+    if (!toc.open) revealed = null;
+    else if (revealed !== current) {
+      reveal(current);
+      revealed = current;
+    }
   }
   function schedule() {
     if (pending) return;

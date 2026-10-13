@@ -10,28 +10,38 @@
   if (!entries.length) return;
 
   const nav = toc.querySelector('nav');
-  const label = document.createRange();
-  let markerReady = false, markerGeometry = '';
+  let markerReady = false, markerGeometry = '', markerPoint = null;
   function positionMarker() {
     if (!toc.open) {
       nav.classList.remove('toc-motion');
       markerReady = false;
+      markerPoint = null;
       nav.style.setProperty('--toc-mark-opacity', '0');
       return;
     }
-    // Follow the label's ink rather than filling the entire navigation row.
+    // Highlight the link's whole row, not its text ink: the block box is a
+    // plain rectangle however many lines the label wraps over, so the raised
+    // marker stays a clean slip of paper for single- and multi-line rows.
     // Coordinates include the outline's own scroll offset on narrow screens.
-    label.selectNodeContents(current);
-    const text = label.getBoundingClientRect(), bounds = nav.getBoundingClientRect();
-    if (!text.width || !text.height) return;
-    const geometry = [text.left - bounds.left + nav.scrollLeft - 6,
-      text.top - bounds.top + nav.scrollTop - 2, text.width + 12, text.height + 4];
+    const row = current.getBoundingClientRect(), bounds = nav.getBoundingClientRect();
+    if (!row.width || !row.height) return;
+    const geometry = [row.left - bounds.left + nav.scrollLeft,
+      row.top - bounds.top + nav.scrollTop, row.width, row.height];
     const key = geometry.join(',');
     if (key !== markerGeometry) {
+      if (markerReady && markerPoint) {
+        // Travel time grows gently with distance: a one-row hop lands almost
+        // at once, a jump across the outline still arrives without swooping.
+        const travel = Math.hypot(geometry[0] - markerPoint[0],
+          geometry[1] - markerPoint[1]);
+        const duration = Math.round(Math.min(320, Math.max(180, 170 + travel * .45)));
+        nav.style.setProperty('--toc-mark-duration', duration + 'ms');
+      }
       ['x', 'y', 'width', 'height'].forEach((name, index) => {
         nav.style.setProperty('--toc-mark-' + name, geometry[index] + 'px');
       });
       markerGeometry = key;
+      markerPoint = [geometry[0], geometry[1]];
     }
     nav.style.setProperty('--toc-mark-opacity', '1');
     if (!markerReady) {

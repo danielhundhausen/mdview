@@ -31,8 +31,9 @@ function page(options = {}) {
   };
   const links = (options.empty ? [] : ids).map((id, index) => ({
     dataset: {headingId: id}, attributes: new Map(),
-    labelRect: {left: 110 + (index === 2 ? 20 : 0), top: 80 + index * 36,
-      width: id.length * 8, height: 22},
+    rowRect: {left: 105 + (index === 2 ? 20 : 0), top: 80 + index * 36,
+      width: 190, height: 22},
+    getBoundingClientRect() { return this.rowRect; },
     setAttribute(name, value) { this.attributes.set(name, value); },
     removeAttribute(name) { this.attributes.delete(name); },
   }));
@@ -58,10 +59,6 @@ function page(options = {}) {
   };
   const document = {
     documentElement: {scrollHeight: 2600},
-    createRange() { return {
-      selectNodeContents(link) { this.link = link; },
-      getBoundingClientRect() { return this.link.labelRect; },
-    }; },
     querySelector(selector) {
       if (selector === '.toc') return options.noToc ? null : toc;
       assert.equal(selector, 'main');
@@ -103,10 +100,10 @@ for (const [width, open] of [[1600, true], [1001, true], [1000.5, true], [1000, 
 
 const view = page();
 assert.equal(view.current(), 'intro');
-assert.equal(view.nav.style.properties.get('--toc-mark-x'), '4px');
-assert.equal(view.nav.style.properties.get('--toc-mark-y'), '8px');
-assert.equal(view.nav.style.properties.get('--toc-mark-width'), '52px');
-assert.equal(view.nav.style.properties.get('--toc-mark-height'), '26px');
+assert.equal(view.nav.style.properties.get('--toc-mark-x'), '5px');
+assert.equal(view.nav.style.properties.get('--toc-mark-y'), '10px');
+assert.equal(view.nav.style.properties.get('--toc-mark-width'), '190px');
+assert.equal(view.nav.style.properties.get('--toc-mark-height'), '22px');
 assert.equal(view.nav.style.properties.get('--toc-mark-opacity'), '1');
 assert.ok(view.nav.classList.values.has('toc-motion'));
 view.window.scrollY = 340;
@@ -115,15 +112,19 @@ view.event('scroll');
 assert.equal(view.frames.length, 1, 'Scroll updates are batched per frame');
 view.flush();
 assert.equal(view.current(), 'installation');
-assert.equal(view.nav.style.properties.get('--toc-mark-y'), '44px');
-assert.equal(view.nav.style.properties.get('--toc-mark-width'), '108px');
+assert.equal(view.nav.style.properties.get('--toc-mark-y'), '46px');
+assert.equal(view.nav.style.properties.get('--toc-mark-width'), '190px');
+assert.equal(view.nav.style.properties.get('--toc-mark-duration'), '186ms',
+  'A one-row hop uses the short end of the travel-time range');
 view.window.scrollY = 990;
 view.event('scroll');
 view.flush();
 assert.equal(view.current(), 'usage');
-assert.equal(view.nav.style.properties.get('--toc-mark-x'), '24px');
-assert.equal(view.nav.style.properties.get('--toc-mark-y'), '80px');
-assert.equal(view.nav.style.properties.get('--toc-mark-width'), '52px');
+assert.equal(view.nav.style.properties.get('--toc-mark-x'), '25px');
+assert.equal(view.nav.style.properties.get('--toc-mark-duration'), '189ms',
+  'An indented hop is timed from its actual travel distance');
+assert.equal(view.nav.style.properties.get('--toc-mark-y'), '82px');
+assert.equal(view.nav.style.properties.get('--toc-mark-width'), '190px');
 // At the bottom, a short final section is selected before it reaches the margin.
 view.window.scrollY = 2000;
 view.event('scroll');
@@ -149,13 +150,13 @@ view.event('resize');
 view.flush();
 assert.equal(view.current(), 'usage');
 
-// Reflowing a wrapped label updates its marker even when the section is unchanged.
-view.links[2].labelRect.width = 120;
-view.links[2].labelRect.height = 44;
+// A label wrapping to two lines grows the row marker to cover both lines,
+// at the same full-row width as every other entry.
+view.links[2].rowRect.height = 44;
 view.event('resize');
 view.flush();
-assert.equal(view.nav.style.properties.get('--toc-mark-width'), '132px');
-assert.equal(view.nav.style.properties.get('--toc-mark-height'), '48px');
+assert.equal(view.nav.style.properties.get('--toc-mark-width'), '190px');
+assert.equal(view.nav.style.properties.get('--toc-mark-height'), '44px');
 view.toc.open = false;
 view.event('toggle');
 view.flush();
@@ -172,10 +173,10 @@ const mobile = page({width: 375});
 assert.equal(mobile.nav.classList.values.has('toc-motion'), false);
 mobile.toc.open = true;
 mobile.nav.scrollTop = 50;
-mobile.links[0].labelRect.top -= 50;
+mobile.links[0].rowRect.top -= 50;
 mobile.event('toggle');
 mobile.flush();
-assert.equal(mobile.nav.style.properties.get('--toc-mark-y'), '8px');
+assert.equal(mobile.nav.style.properties.get('--toc-mark-y'), '10px');
 assert.equal(mobile.nav.style.properties.get('--toc-mark-opacity'), '1');
 assert.ok(mobile.nav.classList.values.has('toc-motion'));
 

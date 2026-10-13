@@ -24,6 +24,7 @@ void render_modules_styles(const RenderModules *state, RenderEmit emit, void *co
 int render_modules_scripts(const RenderModules *state, RenderEmit emit, void *context);
 
 extern const RenderModule mermaid_module;
+extern const RenderModule math_module;
 extern const RenderModule code_module;
 
 #endif

@@ -84,7 +84,7 @@ CSS with a warm paper layout, serif headings, system fonts, light/dark themes,
 accessible link focus indicators, responsive layout, and print styles. Pages
 without code blocks, a table of contents, or `--watch` use no JavaScript,
 web fonts, or remote stylesheets. Code
-blocks and Mermaid diagrams include their browser assets as described below.
+blocks, Mermaid diagrams, and mathematics include their browser assets as described below.
 Remote images can still be loaded if the document references them.
 
 ## Heading links and table of contents
@@ -168,7 +168,7 @@ diagram source is available in a disclosure below each diagram.
 
 The executable contains **Mermaid 12.1.0**, compressed with DEFLATE. A small
 vendored C decompressor expands the library into the generated HTML only when
-Mermaid fences are present. The binary is approximately 1.8 MB; diagram pages
+Mermaid fences are present. Diagram pages
 include approximately 5.5 MB of JavaScript. Ordinary pages remain small.
 
 Diagram rendering requires browser JavaScript and works offline. No Node.js,
@@ -179,6 +179,42 @@ configured remote icon resources can still use the network.
 Mermaid runs in strict mode, which disables diagram click handlers and encodes
 HTML labels. See the [Mermaid usage guide](https://mermaid.js.org/config/usage).
 
+## Mathematics
+
+Write TeX inline with `$...$` or `\(...\)`, as a display block with
+`$$...$$` or `\[...\]`, or in a fenced block labeled `math`:
+
+````markdown
+Einstein's relation $E = mc^2$ and the integral below are rendered.
+
+$$
+\int_0^1 x^2 \, dx = \frac{1}{3}
+$$
+
+```math
+\sum_{i=1}^n i = \frac{n(n+1)}{2}
+```
+````
+
+Rendered mathematics follows the document's text color in both themes and
+scales to fit the reading column; wide display expressions scroll
+horizontally. The original TeX for a `math` fence is available, with a copy
+button, in a disclosure below the rendered result. Inline and display TeX
+also works inside headings, lists, blockquotes, and table cells. Dollar
+amounts such as $5 and $10, math inside code spans or code blocks, and
+`\$` escapes stay literal.
+
+The executable contains **MathJax 3.2.2** (the TeX-to-SVG build), compressed
+with DEFLATE in the same way as Mermaid. The same vendored decompressor
+expands the library into the generated HTML only when a document contains
+mathematics. Math pages include approximately 2.1 MB of JavaScript; the
+binary is approximately 2.4 MB. SVG output inlines its glyphs, so no web
+fonts, CDN connection, or accompanying runtime files are needed.
+
+Math rendering requires browser JavaScript and works offline. If JavaScript
+is disabled or an expression is invalid, the escaped TeX source remains
+readable in place.
+
 ## Markdown support
 
 - ATX (`#`) and single-line Setext headings, paragraphs, and horizontal rules
@@ -187,6 +223,7 @@ HTML labels. See the [Mermaid usage guide](https://mermaid.js.org/config/usage).
 - Inline code, fenced code with optional language labels, and indented code
 - Offline syntax highlighting for supported fenced languages and code copy buttons
 - Mermaid diagrams in `mermaid` fences, including inside lists and blockquotes
+- Inline (`$...$`, `\(...\)`), display (`$$...$$`, `\[...\]`), and fenced (`math`) TeX mathematics
 - Bullet and numbered lists, nested lists, and task checkboxes
 - Blockquotes, including nested blocks
 - Inline links and images, optional quoted titles, and angle-bracket URL/email links
@@ -215,6 +252,7 @@ the vendored manifest. It also covers conditional code assets, controls in neste
 blocks, safe HTML escaping, and the vendored highlighter's checksums.
 `make test-js` requires Node.js and tests the Mermaid adapter with a mocked
 renderer, including missing-runtime fallback, syntax errors, and theme changes.
+It tests the math adapter the same way, with a mocked MathJax renderer.
 It executes the actual bundled highlighter and code adapter with DOM/clipboard
 stubs to verify languages and aliases, copied text, missing-runtime fallback,
 clipboard failures, retries, and focus/selection restoration. Neither suite
@@ -254,7 +292,10 @@ which are used by a document, and `mermaid_module.c` owns Mermaid's markup and
 runtime. `code_module.c` supplies shared code decoration and highlighting assets;
 `code_styles.css` and `code_adapter.js` own highlighting styles and copy behavior.
 `mermaid_styles.css`, `mermaid_adapter.js`, and `diagram_viewer.js` own
-the diagram styles, rendering adapter, and modal viewer. These assets are
+the diagram styles, rendering adapter, and modal viewer. `math_module.c` owns
+the `math` fence markup and the MathJax runtime, and the parser activates it
+for inline and display math; `math_styles.css` and `math_adapter.js` own its
+styles and rendering adapter. These assets are
 embedded by the C build helper. To add another renderer, implement a `RenderModule`,
 register it, and add its C source to `SOURCES` in the Makefile. Module assets are
 included once, only in documents that use the corresponding fence language.
@@ -273,7 +314,7 @@ make test
 
 ## License
 
-mdview is MIT licensed; see [LICENSE](LICENSE). Bundled Mermaid, miniz, and
+mdview is MIT licensed; see [LICENSE](LICENSE). Bundled Mermaid, MathJax, miniz, and
 Highlight.js retain their upstream licenses under `vendor/`. The OpenTelemetry
 test diagrams are CC BY 4.0, with source attribution and license under
 `tests/fixtures/`.

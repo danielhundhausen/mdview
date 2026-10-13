@@ -1,0 +1,11 @@
+{
+  "version": "3.2.2",
+  "url": "https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js",
+  "source_bytes": 2108580,
+  "source_sha256": "d4295dc33744836935c1399feece5159577b34c5c8ffb9f1c6324cd82e03a882",
+  "asset_bytes": 2108583,
+  "asset_sha256": "4b2950300cf8ec2d123cb512eb60485f3f9f3da686c1d7083ddaad75cbce1f34",
+  "deflate_bytes": 676341,
+  "deflate_sha256": "719d862c1bc0cedefbbfe0c6bddb495ce38fe71d1fd81410776fbe3a94afb46a",
+  "transformation": "Replace the literal <!-- in one regular expression with \\x3c!-- to safely embed in an HTML script element."
+}

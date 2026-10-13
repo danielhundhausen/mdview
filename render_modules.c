@@ -3,7 +3,7 @@
 #include <string.h>
 
 /* Add fenced-code renderers here; each module brings its own assets. */
-static const RenderModule *const registry[] = { &mermaid_module, &code_module };
+static const RenderModule *const registry[] = { &mermaid_module, &math_module, &code_module };
 #define MODULE_COUNT (sizeof(registry) / sizeof(*registry))
 typedef char modules_fit_bitset[MODULE_COUNT <= sizeof(unsigned) * CHAR_BIT ? 1 : -1];
 

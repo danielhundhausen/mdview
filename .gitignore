@@ -2,4 +2,5 @@
 *.dSYM/
 /.build/
 /mermaid_asset.h
+/math_asset.h
 /artifacts/

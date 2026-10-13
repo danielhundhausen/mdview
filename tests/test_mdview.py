@@ -438,6 +438,54 @@ class MdviewTests(unittest.TestCase):
         self.assertEqual(html.count('<figure class="md-diagram">'), 2)
         self.assertEqual((self.root / "out.html").read_text().count('data-mdview-mermaid-runtime="12.1.0"'), 1)
 
+    def test_math_inline_and_display(self):
+        html = self.render("Inline $E = mc^2$ and \\(\\frac{a}{b}\\) here.\n\n"
+                           "$$\n\\int_0^1 x^2 \\, dx\n$$\n\n\\[ x < y \\]\n\n$$ \\alpha $$\n")
+        self.assertIn('<span class="md-math md-math-inline">E = mc^2</span>', html)
+        self.assertIn('<span class="md-math md-math-inline">\\frac{a}{b}</span>', html)
+        self.assertIn('<div class="md-math md-math-display">\\int_0^1 x^2 \\, dx</div>', html)
+        self.assertIn('<div class="md-math md-math-display">x &lt; y</div>', html)
+        self.assertIn('<div class="md-math md-math-display">\\alpha</div>', html)
+        full = (self.root / "out.html").read_text()
+        self.assertEqual(full.count('data-mdview-math-runtime="3.2.2"'), 1)
+        self.assertEqual(full.count('data-mdview-math-config'), 1)
+        self.assertIn(".md-math-display{", full)
+        # Assistive MathML must be visually hidden or Safari shows it as a second copy.
+        self.assertIn("mjx-assistive-mml{position:absolute!important", full)
+        raw = (self.root / "out.html").read_bytes()
+        runtime = raw.split(b'<script data-mdview-math-runtime="3.2.2">\n', 1)[1].split(b"*/\n", 1)[1].split(b"*/\n", 1)[1].split(b"\n</script>", 1)[0]
+        manifest = json.loads((Path(__file__).resolve().parents[1] / "vendor/math/manifest.json").read_text())
+        self.assertEqual(hashlib.sha256(runtime).hexdigest(), manifest["asset_sha256"])
+        upstream = runtime.replace(b"/\\x3c!--.*?-->/g", b"/<!--.*?-->/g")
+        self.assertEqual(hashlib.sha256(upstream).hexdigest(), manifest["source_sha256"])
+        self.assertNotIn(b"<!--", runtime)
+        self.assertNotIn(b"<script", runtime.lower())
+        self.assertNotIn(b"</script", runtime.lower())
+
+    def test_math_fences_nesting_and_fallbacks(self):
+        html = self.render("```math\n\\sum_{i=1}^n i\n```\n\n"
+                           "> $q^2$\n\n- $l^2$\n\n# $h^2$\n", "--no-toc")
+        self.assertEqual(html.count('<figure class="md-math-block">'), 1)
+        self.assertIn('<pre><code class="language-math">\\sum_{i=1}^n i\n</code></pre>', html)
+        self.assertIn('<span class="md-math md-math-inline">q^2</span>', html)
+        self.assertIn('<span class="md-math md-math-inline">l^2</span>', html)
+        self.assertIn('<span class="md-math md-math-inline">h^2</span>', html)
+        self.assertEqual((self.root / "out.html").read_text().count('data-mdview-math-runtime="3.2.2"'), 1)
+        plain = self.render("Costs $5 and $10, code `$x$`, \\$escaped, unclosed $x and $$y\n\n"
+                            "```\n$not math$\n```\n")
+        self.assertNotIn("md-math", plain)
+        self.assertIn("<code>$x$</code>", plain)
+        self.assertIn("$escaped", plain)
+        full = (self.root / "out.html").read_text()
+        self.assertNotIn("data-mdview-math-runtime", full)
+        self.assertNotIn(".md-math-display{", full)
+
+    def test_math_escaping(self):
+        html = self.render("```math\n</script><script>alert(1)</script>\n```\n\n$a < b$\n")
+        self.assertIn("&lt;/script&gt;&lt;script&gt;alert(1)&lt;/script&gt;", html)
+        self.assertNotIn("<script>alert(1)", (self.root / "out.html").read_text())
+        self.assertIn('<span class="md-math md-math-inline">a &lt; b</span>', html)
+
     def test_module_assets_are_conditional(self):
         for source in ("", "# Plain Markdown", "Use `inline code`.",
                        "> No blocks\n\n- just a list", "<pre><code>raw HTML</code></pre>"):
@@ -604,7 +652,7 @@ class MdviewTests(unittest.TestCase):
         self.assertEqual(self.run_cmd("--help").returncode, 0)
         version = self.run_cmd("--version")
         self.assertEqual(version.returncode, 0)
-        self.assertEqual(version.stdout.strip(), "mdview 0.0.6")
+        self.assertEqual(version.stdout.strip(), "mdview 0.0.7")
         path = self.root / "nul.md"
         path.write_bytes(b"a\0b")
         self.assertIn("NUL", self.run_cmd("--no-open", path).stderr)

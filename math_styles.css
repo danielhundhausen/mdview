@@ -1,0 +1,17 @@
+.md-math-inline{overflow-wrap:normal}
+/* MathJax also emits assistive MathML for screen readers; its own hiding
+   stylesheet only arrives when MathJax typesets the page, which mdview does
+   not use, so hide that copy visually here (Safari would otherwise render
+   it natively next to the SVG). */
+mjx-assistive-mml{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+mjx-container{display:inline-block}
+mjx-container[display="true"]{display:block;text-align:center}
+.md-math-display{display:block;margin:1.3em 0;padding:.4rem .5rem;overflow-x:auto;overflow-y:hidden;text-align:center}
+.md-math-display mjx-container,.md-math-inline mjx-container{color:inherit}
+.md-math-block{position:relative;margin:1.6em 0;padding:1.25rem;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+.math-canvas{overflow-x:auto;overflow-y:hidden;padding:.5rem 0;text-align:center}.math-canvas[hidden]{display:none}
+.math-canvas:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+.md-math-block details{margin:0}.md-math-block summary{font-size:.82em;color:var(--muted);cursor:pointer}
+.md-math-block details .md-code-block{margin:.75rem 0 0}.math-status{font-size:.85em;color:var(--muted);margin:.75rem 0 0}
+@media(max-width:600px){.md-math-block{padding:.85rem}}
+@media print{.md-math-block{break-inside:avoid}.md-math-block[data-rendered] details{display:none!important}.math-canvas{overflow:visible}.md-math-display{overflow:visible}}

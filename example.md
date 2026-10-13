@@ -337,9 +337,53 @@ And inside lists:
       A[List item] --> B[Diagram]
   ```
 
+## Mathematics
+
+Inline TeX such as $E = mc^2$ and \(\frac{a}{b}\) renders in place.
+Display math is centered, whether it spans several lines:
+
+$$
+\int_0^1 x^2 \, dx = \frac{1}{3}
+$$
+
+Fits on one line:
+
+$$ \alpha + \beta = \gamma $$
+
+Or uses bracket delimiters:
+
+\[ x < y \implies y > x \]
+
+A `math` fence keeps its TeX source in a disclosure below the result:
+
+```math
+\sum_{i=1}^n i = \frac{n(n+1)}{2}
+```
+
+Tilde fences work too:
+
+~~~math
+e^{i\pi} + 1 = 0
+~~~
+
+### A heading with $x^2$ in it
+
+Math also renders in other elements:
+
+- A list item with $l^2$ inline math.
+
+> A quote with $q^2$ inline math.
+
+| Symbol | Meaning |
+| :--- | :--- |
+| $\pi$ | Pi, in a table cell |
+
+Prices like $5 and $10, math in `code $x$`, and \$escaped dollars stay literal.
+Unclosed $x and $$y delimiters stay literal too.
+
 ---
 
 The page follows your system's light or dark theme. The reading column adapts
 to narrow windows; wide code and tables scroll horizontally. Print styles hide
-interactive controls. With JavaScript disabled, all code and diagram source
+interactive controls. With JavaScript disabled, all code, diagram, and math source
 remains readable.

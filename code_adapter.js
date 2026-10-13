@@ -43,7 +43,7 @@
     const language = [...code.classList].find(name => name.startsWith('language-'))?.slice(9).toLowerCase();
     // No guessing: unknown/unlabeled blocks and Mermaid source stay plain text.
     try {
-      if (language && language !== 'mermaid' && globalThis.hljs?.getLanguage(language)) {
+      if (language && language !== 'mermaid' && language !== 'math' && globalThis.hljs?.getLanguage(language)) {
         code.innerHTML = hljs.highlight(source, {language, ignoreIllegals: true}).value;
         code.classList.add('hljs');
       }

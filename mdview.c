@@ -167,9 +167,56 @@ static size_t closing(const char *s, size_t n, size_t from, const char *mark, si
     return n;
 }
 
-static void inline_md(Buf *out, const char *s, size_t n, unsigned depth, int links) {
+static size_t math_closing(const char *s, size_t n, size_t from, const char *mark, size_t len) {
+    for (size_t i = from; i + len <= n; ++i) {
+        if (!memcmp(s + i, mark, len)) return i;
+        if (s[i] == '\\' && i + 1 < n) { ++i; continue; }
+        if (s[i] == '`') {
+            size_t run = 1;
+            while (i + run < n && s[i + run] == '`') ++run;
+            size_t end = i + run;
+            for (; end < n; ++end) {
+                if (s[end] != '`') continue;
+                size_t count = 1;
+                while (end + count < n && s[end + count] == '`') ++count;
+                if (count == run) break;
+                end += count - 1;
+            }
+            if (end < n) i = end + run - 1;
+            else i += run - 1;
+            continue;
+        }
+    }
+    return n;
+}
+
+static void emit_math(Buf *out, RenderModules *modules, const char *s, size_t n, int display) {
+    if (modules) render_module_use(modules, &math_module);
+    append(out, display ? "<span class=\"md-math md-math-display\">" : "<span class=\"md-math md-math-inline\">");
+    escape(out, s, n);
+    append(out, "</span>");
+}
+
+static void inline_md(Buf *out, const char *s, size_t n, unsigned depth, int links, RenderModules *modules) {
     if (depth > 32) { escape(out, s, n); return; }
     for (size_t i = 0; i < n;) {
+        if (s[i] == '\\' && i + 1 < n && (s[i + 1] == '(' || s[i + 1] == '[')) {
+            int display = s[i + 1] == '[';
+            size_t end = math_closing(s, n, i + 2, display ? "\\]" : "\\)", 2);
+            if (end < n && end > i + 2) { emit_math(out, modules, s + i + 2, end - i - 2, display); i = end + 2; continue; }
+        }
+        if (s[i] == '$' && i + 1 < n && s[i + 1] == '$') {
+            size_t end = math_closing(s, n, i + 2, "$$", 2);
+            if (end < n && end > i + 2) { emit_math(out, modules, s + i + 2, end - i - 2, 1); i = end + 2; continue; }
+        } else if (s[i] == '$' && i + 1 < n && !isspace((unsigned char)s[i + 1])) {
+            size_t end = math_closing(s, n, i + 1, "$", 1);
+            int has_newline = 0;
+            for (size_t j = i + 1; j < end && j < n; ++j) if (s[j] == '\n') has_newline = 1;
+            if (end < n && end > i + 1 && !has_newline && !isspace((unsigned char)s[end - 1]) &&
+                (end + 1 >= n || !isdigit((unsigned char)s[end + 1]))) {
+                emit_math(out, modules, s + i + 1, end - i - 1, 0); i = end + 1; continue;
+            }
+        }
         if (s[i] == '\\' && i + 1 < n && ispunct((unsigned char)s[i + 1])) {
             escape(out, s + i + 1, 1); i += 2; continue;
         }
@@ -255,9 +302,9 @@ static void inline_md(Buf *out, const char *s, size_t n, unsigned depth, int lin
                         if (image) {
                             append(out, " alt=\""); escape(out, s + a, end - a); append(out, "\" loading=\"lazy\">");
                         } else {
-                            put(out, '>'); inline_md(out, s + a, end - a, depth + 1, 0); append(out, "</a>");
+                            put(out, '>'); inline_md(out, s + a, end - a, depth + 1, 0, modules); append(out, "</a>");
                         }
-                    } else inline_md(out, s + a, end - a, depth + 1, 0);
+                    } else inline_md(out, s + a, end - a, depth + 1, 0, modules);
                     free(url.s); i = tail + 1; continue;
                 }
             }
@@ -288,7 +335,7 @@ static void inline_md(Buf *out, const char *s, size_t n, unsigned depth, int lin
                 if (end < n) {
                     const char *open = s[i] == '~' ? "<del>" : run == 3 ? "<em><strong>" : run == 2 ? "<strong>" : "<em>";
                     const char *close = s[i] == '~' ? "</del>" : run == 3 ? "</strong></em>" : run == 2 ? "</strong>" : "</em>";
-                    append(out, open); inline_md(out, s + i + run, end - i - run, depth + 1, links);
+                    append(out, open); inline_md(out, s + i + run, end - i - run, depth + 1, links, modules);
                     append(out, close); i = end + run; continue;
                 }
             }
@@ -382,7 +429,7 @@ static int table_delimiter(const char *s) {
     free_lines(l); return valid;
 }
 
-static void table_row(Buf *out, const char *s, Lines align, int header) {
+static void table_row(Buf *out, const char *s, Lines align, int header, RenderModules *modules) {
     Lines row = cells(s); append(out, "<tr>");
     for (size_t i = 0; i < align.n; ++i) {
         const char *tag = header ? "th" : "td";
@@ -397,17 +444,24 @@ static void table_row(Buf *out, const char *s, Lines align, int header) {
         if (i < row.n) {
             p = row.v[i]; while (*p == ' ') ++p;
             n = strlen(p); while (n && p[n - 1] == ' ') --n;
-            inline_md(out, p, n, 0, 1);
+            inline_md(out, p, n, 0, 1, modules);
         }
         append(out, "</"); append(out, tag); put(out, '>');
     }
     append(out, "</tr>\n"); free_lines(row);
 }
 
+static const char *display_math_open(const char *s) {
+    size_t k = indent(s);
+    if (k > 3) return NULL;
+    if (!strncmp(s + k, "$$", 2) || (s[k] == '\\' && s[k + 1] == '[')) return s + k + 2;
+    return NULL;
+}
+
 static int block_start(const char *s) {
     size_t body; char ch;
     return blank(s) || heading(s, &body) || rule(s) || fence(s, &ch, &body) ||
-           (indent(s) <= 3 && s[indent(s)] == '>') || marker(s).kind;
+           (indent(s) <= 3 && s[indent(s)] == '>') || marker(s).kind || display_math_open(s) != NULL;
 }
 
 static void begin_code(Buf *out, RenderModules *modules) {
@@ -444,9 +498,9 @@ static int heading_id_used(const Headings *headings, const char *id) {
 }
 
 static void render_heading(Buf *out, Headings *headings, const char *s,
-                           size_t n, int level) {
+                           size_t n, int level, RenderModules *modules) {
     Buf markup = {0}, text = {0}, slug = {0};
-    inline_md(&markup, s, n, 0, 1);
+    inline_md(&markup, s, n, 0, 1, modules);
     /* Use the rendered label, so formatting and link destinations never enter IDs. */
     for (size_t i = 0; i < markup.n;) {
         if (markup.s[i] == '<') {
@@ -564,6 +618,32 @@ static void blocks(Buf *out, Lines l, unsigned depth, RenderModules *modules, He
             if (module) append(out, module->after_code);
             continue;
         }
+        const char *math_open = display_math_open(s);
+        if (math_open) {
+            const char *close_mark = s[indent(s)] == '$' ? "$$" : "\\]";
+            Buf tex = {0}; size_t j = i; int closed = 0;
+            while (j < l.n) {
+                const char *line = j == i ? math_open : l.v[j];
+                size_t len = strlen(line);
+                size_t pos = math_closing(line, len, 0, close_mark, 2);
+                if (pos < len) {
+                    if (blank(line + pos + 2)) { append_n(&tex, line, pos); ++j; closed = 1; }
+                    break;
+                }
+                append(&tex, line); put(&tex, '\n'); ++j;
+            }
+            size_t a = 0, z = tex.n;
+            while (a < z && isspace((unsigned char)tex.s[a])) ++a;
+            while (z > a && isspace((unsigned char)tex.s[z - 1])) --z;
+            if (closed && z > a) {
+                render_module_use(modules, &math_module);
+                append(out, "<div class=\"md-math md-math-display\">");
+                escape(out, tex.s + a, z - a);
+                append(out, "</div>\n");
+                free(tex.s); i = j; continue;
+            }
+            free(tex.s);
+        }
         int h = heading(s, &body);
         if (h) {
             size_t n = strlen(s + body);
@@ -572,11 +652,11 @@ static void blocks(Buf *out, Lines l, unsigned depth, RenderModules *modules, He
             if (end < n && end && s[body + end - 1] == ' ') {
                 n = end; while (n && s[body + n - 1] == ' ') --n;
             }
-            render_heading(out, headings, s + body, n, h); ++i; continue;
+            render_heading(out, headings, s + body, n, h, modules); ++i; continue;
         }
         if (i + 1 < l.n && setext(l.v[i + 1]) && indent(s) < 4 && !rule(s) && !marker(s).kind && s[indent(s)] != '>') {
             h = setext(l.v[i + 1]);
-            render_heading(out, headings, s, strlen(s), h); i += 2; continue;
+            render_heading(out, headings, s, strlen(s), h, modules); i += 2; continue;
         }
         if (rule(s)) { append(out, "<hr>\n"); ++i; continue; }
         if (indent(s) <= 3 && s[indent(s)] == '>') {
@@ -642,10 +722,10 @@ static void blocks(Buf *out, Lines l, unsigned depth, RenderModules *modules, He
         }
         if (i + 1 < l.n && strchr(s, '|') && table_delimiter(l.v[i + 1])) {
             Lines align = cells(l.v[i + 1]);
-            append(out, "<div class=\"table-wrap\"><table>\n<thead>"); table_row(out, s, align, 1);
+            append(out, "<div class=\"table-wrap\"><table>\n<thead>"); table_row(out, s, align, 1, modules);
             append(out, "</thead>\n<tbody>\n"); i += 2;
             while (i < l.n && !blank(l.v[i]) && strchr(l.v[i], '|') && !block_start(l.v[i])) {
-                table_row(out, l.v[i++], align, 0);
+                table_row(out, l.v[i++], align, 0, modules);
             }
             append(out, "</tbody></table></div>\n"); free_lines(align); continue;
         }
@@ -655,7 +735,7 @@ static void blocks(Buf *out, Lines l, unsigned depth, RenderModules *modules, He
             append(&paragraph, l.v[i++]);
         } while (i < l.n && !block_start(l.v[i]) &&
                  !(i + 1 < l.n && (setext(l.v[i + 1]) || (strchr(l.v[i], '|') && table_delimiter(l.v[i + 1])))));
-        append(out, "<p>"); inline_md(out, paragraph.s, paragraph.n, 0, 1); append(out, "</p>\n"); free(paragraph.s);
+        append(out, "<p>"); inline_md(out, paragraph.s, paragraph.n, 0, 1, modules); append(out, "</p>\n"); free(paragraph.s);
     }
 }
 
@@ -868,7 +948,7 @@ int main(int argc, char **argv) {
         const char *arg = argv[i];
         if (options && !strcmp(arg, "--")) { options = 0; continue; }
         if (options && (!strcmp(arg, "--help") || !strcmp(arg, "-h"))) { usage(stdout); return 0; }
-        if (options && !strcmp(arg, "--version")) { puts("mdview 0.0.6"); return 0; }
+        if (options && !strcmp(arg, "--version")) { puts("mdview 0.0.7"); return 0; }
         if (options && !strcmp(arg, "--no-open")) { launch = 0; continue; }
         if (options && !strcmp(arg, "--watch")) { watch = 1; continue; }
         if (options && !strcmp(arg, "--toc")) { toc_mode = 1; continue; }
